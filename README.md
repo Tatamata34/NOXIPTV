@@ -1,16 +1,14 @@
-# Nox IPTV Cloud Panel V4.2
+# Nox IPTV Cloud Panel V4.3
 
-## Ndryshimet V4.2
+## Ndryshimet V4.3
 
 - Client Portal: `/watch`
-- Pa Download M3U për klient
-- Pa Open Stream / Copy URL
-- Player provon:
-  1. HLS/M3U8 me hls.js
-  2. MPEG-TS me mpegts.js
-  3. direct playback fallback
+- Shtohet butoni `Open in VLC`
+- Kur zgjidhet një kanal, butoni hap `vlc://STREAM_URL`
+- Shtohet `Copy URL` për rastet kur telefoni nuk e hap direkt VLC
+- Browser player mbetet: HLS/M3U8 + MPEGTS attempt
 
-## E rëndësishme
+## Shënim
 
-Në iPhone/Safari, TS/MPEGTS mund të mos punojë edhe me mpegts.js.
-Nëse provider-i nuk jep HLS/M3U8 ose CORS, zgjidhja reale është VPS HLS relay/transcoding.
+Për iPhone/Android, klienti duhet të ketë të instaluar VLC app.
+Nëse `vlc://` nuk hapet në disa browsera, përdor `Copy URL` dhe ngjite në VLC.
