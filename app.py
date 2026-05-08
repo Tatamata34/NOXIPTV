@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4
+NOX IPTV CLOUD PANEL V4.1
 -----------------------
 Admin panel + Client Portal + Web Player.
 
@@ -406,7 +406,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4</title>
+  <title>Nox IPTV Panel V4.1</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -440,7 +440,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4</h1>
+      <h1>Nox IPTV Panel V4.1</h1>
       <p>Admin panel + Client portal + Web player.</p>
       {% if logged %}
       <div class="nav">
@@ -934,7 +934,6 @@ def watch_home():
         })
 
     data_json = json.dumps(safe_items, ensure_ascii=False)
-    m3u_url = url_for("client_download_m3u")
     body = f"""
     <div class="top">
       <h2>{c.get('name')} - Nox IPTV Watch</h2>
@@ -944,7 +943,6 @@ def watch_home():
           <option value="">Të gjitha kategoritë</option>
           {''.join(f'<option value="{g}">{g}</option>' for g in groups)}
         </select>
-        <a class="btn gray" href="{m3u_url}">Download M3U</a>
         <a class="btn red" href="/watch/logout">Logout</a>
       </div>
     </div>
@@ -952,10 +950,9 @@ def watch_home():
       <div class="player">
         <video id="video" controls playsinline></video>
         <div class="now" id="now">Zgjedh një kanal.</div>
-        <div class="hint" id="hint">M3U8 hapet brenda browserit. TS/MPEGTS mund të kërkojë VLC/IPTV app.</div>
-        <p><a class="btn" id="openExternal" href="#" target="_blank">Open Stream</a>
-        <button class="btn gray" onclick="copyUrl()">Copy URL</button></p>
-        <p class="hint">Nëse video nuk hapet në browser, përdor Open Stream ose shkarko M3U.</p>
+        <div class="hint" id="hint">Zgjedh një kanal. Player-i do të provojë ta hapë direkt në browser.</div>
+        <p class="hint">Shikimi është vetëm brenda këtij player-i.</p>
+        <p class="hint">Nëse një kanal nuk hapet, ai format mund të mos suportohet nga browseri. Për shikim 100% në browser kërko output m3u8/HLS.</p>
       </div>
       <div class="grid" id="channels"></div>
     </div>
@@ -966,27 +963,52 @@ def watch_home():
       function playChannel(ch) {{
         currentUrl = ch.url;
         document.getElementById("now").innerText = ch.name + " — " + ch.group;
-        document.getElementById("openExternal").href = ch.url;
         const video = document.getElementById("video");
 
-        if (ch.url.includes(".m3u8")) {{
+        if (window.hls) {{
+          window.hls.destroy();
+          window.hls = null;
+        }}
+
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+
+        video.onerror = function() {{
+          document.getElementById("hint").innerText =
+            "Ky kanal nuk u hap në browser. Zakonisht ndodh kur stream është TS/MPEGTS dhe jo HLS/M3U8.";
+        }};
+
+        if (ch.url.toLowerCase().includes(".m3u8")) {{
           if (Hls.isSupported()) {{
-            if (window.hls) window.hls.destroy();
-            window.hls = new Hls();
+            window.hls = new Hls({{
+              maxBufferLength: 30,
+              liveSyncDurationCount: 3,
+              enableWorker: true
+            }});
             window.hls.loadSource(ch.url);
             window.hls.attachMedia(video);
-            window.hls.on(Hls.Events.MANIFEST_PARSED, function() {{ video.play(); }});
+            window.hls.on(Hls.Events.MANIFEST_PARSED, function() {{
+              video.play().catch(() => {{}});
+            }});
+            window.hls.on(Hls.Events.ERROR, function(event, data) {{
+              if (data.fatal) {{
+                document.getElementById("hint").innerText =
+                  "HLS error: kanali nuk u hap në browser.";
+              }}
+            }});
           }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
             video.src = ch.url;
-            video.play();
+            video.play().catch(() => {{}});
           }}
-          document.getElementById("hint").innerText = "HLS/M3U8 player aktiv.";
+          document.getElementById("hint").innerText = "Duke provuar HLS/M3U8 në browser...";
         }} else {{
-          video.pause();
-          video.removeAttribute("src");
-          video.load();
-          document.getElementById("hint").innerText = "Ky stream duket TS/MPEGTS. Browseri mund të mos e hapë; provo Open Stream ose VLC.";
-          window.open(ch.url, "_blank");
+          video.src = ch.url;
+          video.play().catch(() => {{
+            document.getElementById("hint").innerText =
+              "Browseri nuk e hapi këtë format. Për shikim 100% në browser duhet stream/output m3u8 nga provider-i.";
+          }});
+          document.getElementById("hint").innerText = "Duke provuar direct playback në browser...";
         }}
       }}
 
@@ -1010,11 +1032,6 @@ def watch_home():
         }});
       }}
 
-      function copyUrl() {{
-        if (!currentUrl) return;
-        navigator.clipboard.writeText(currentUrl);
-        alert("URL u kopjua.");
-      }}
 
       document.getElementById("search").addEventListener("input", render);
       document.getElementById("group").addEventListener("change", render);
@@ -1024,17 +1041,6 @@ def watch_home():
     return client_page(body)
 
 
-@app.route("/watch/m3u")
-def client_download_m3u():
-    if not client_login_required():
-        return redirect("/watch")
-    slug = session["client_slug"]
-    text = get_playlist_for_client(slug, force_refresh=False)
-    return Response(
-        text,
-        mimetype="audio/x-mpegurl",
-        headers={"Content-Disposition": f"attachment; filename={slug}.m3u"}
-    )
 
 
 @app.route("/health")
