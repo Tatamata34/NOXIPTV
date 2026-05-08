@@ -1,17 +1,16 @@
-# Nox IPTV Cloud Panel V4.1
+# Nox IPTV Cloud Panel V4.2
 
-## Ndryshimet V4.1
+## Ndryshimet V4.2
 
 - Client Portal: `/watch`
-- Nuk ka më Download M3U te klienti
-- Nuk ka Copy URL / Open Stream te klienti
-- Klienti shikon vetëm brenda web player-it
-- Player provon HLS/M3U8 me hls.js
-- Për TS/MPEGTS provon direct playback në browser, por jo çdo browser e suporton
+- Pa Download M3U për klient
+- Pa Open Stream / Copy URL
+- Player provon:
+  1. HLS/M3U8 me hls.js
+  2. MPEG-TS me mpegts.js
+  3. direct playback fallback
 
-## Shënim teknik
+## E rëndësishme
 
-Për shikim 100% brenda browserit, stream-et duhet të jenë HLS/M3U8.
-Nëse provider-i jep vetëm TS/MPEGTS, disa browsera mund të mos e hapin.
-
-Paneli nuk e proxy-on video stream-in përmes Render, prandaj nuk harxhon shumë bandwidth.
+Në iPhone/Safari, TS/MPEGTS mund të mos punojë edhe me mpegts.js.
+Nëse provider-i nuk jep HLS/M3U8 ose CORS, zgjidhja reale është VPS HLS relay/transcoding.
