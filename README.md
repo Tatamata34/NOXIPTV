@@ -1,27 +1,19 @@
-# IPTV Cloud Panel V3
+# Nox IPTV Cloud Panel V4
 
-## Çka ka të re
+## Çka shton V4
 
-- UI më moderne
-- Dashboard me statistika
-- Download playlist direkt
-- Bulk refresh
-- Clear cache
-- Export/Import JSON
-- Master Template preview
-- Template mode me host/user/pass për çdo klient
-- Optional Proxy URL / VPN gateway field
+- Client Portal: `/watch`
+- Çdo klient ka portal username/password
+- Klienti sheh kanalet nga telefoni/laptopi
+- Search + group filter
+- Web player për HLS/M3U8
+- Për TS/MPEGTS: Open Stream / Copy URL / Download M3U
+- Admin panel mbetet si më parë
 
-## VPN / ExpressVPN
+## E rëndësishme
 
-ExpressVPN në PC nuk funksionon automatikisht për Render.
-Render është server online i ndarë nga kompjuteri yt.
-
-Nëse do realisht VPN/proxy:
-- duhet VPS ku e instalon VPN/proxy
-- ose një proxy endpoint që paneli e përdor te fusha `Proxy URL`
-
-Për shumicën e rasteve nuk nevojitet, sepse paneli vetëm gjeneron M3U, nuk hoston stream-in.
+Paneli nuk e kalon video stream-in përmes Render. Stream hapet direkt te provider-i nga pajisja e klientit.
+Kjo e mban bandwidth-in e Render shumë të ulët.
 
 ## Deploy
 
