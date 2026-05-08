@@ -2,25 +2,26 @@
 # -*- coding: utf-8 -*-
 
 """
-IPTV CLOUD PANEL V3
--------------------
-Panel online për menaxhim M3U.
+NOX IPTV CLOUD PANEL V4
+-----------------------
+Admin panel + Client Portal + Web Player.
 
-E RE NË V3:
-- UI më moderne
-- Dashboard me statistika
-- Master Template me preview/count
-- Add/Edit client më i qartë
-- Download playlist direkt
-- Bulk refresh për krejt klientët
-- Clear cache
-- Client check/status
-- Export/Import clients JSON
-- Opsion proxy URL për fetch të M3U/API nëse përdor server/proxy tënd
-- Ruajtje cache
-- Template mode: një renditje për të gjithë, ndryshon vetëm host/user/pass
+Përdorim vetëm me lista/stream-e që ke të drejtë t'i përdorësh.
 
-Përdore vetëm me playlistat/abonimet që ke të drejtë t'i përdorësh.
+Funksionet V4:
+- Admin login
+- Master Template
+- Klientë me host/user/pass ose source M3U individual
+- Permanent M3U link për Smart IPTV
+- Client portal login: /watch
+- Çdo klient ka portal user/password
+- Kërkim kanalesh
+- Kategori/grupe
+- Web player për m3u8/HLS
+- Për TS/MPEGTS: buton Open Stream / Copy URL / Download M3U
+- Download M3U për klientin
+- Bulk refresh, clear cache, export JSON
+- Nuk proxy-on video stream-in; video hapet direkt nga provider-i te klienti
 """
 
 import json
@@ -66,6 +67,8 @@ DEFAULT_GROUP_ORDER = [
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
+
+# ---------------- Helpers ----------------
 
 def load_clients():
     if CLIENTS_FILE.exists():
@@ -150,13 +153,6 @@ def save_template_text(text):
 
 
 def proxy_fetch_url(client, target_url):
-    """
-    Optional proxy gateway:
-    Nëse ke proxy service tënd, vendose te klienti:
-    https://proxy-domain/fetch?url=
-    Paneli do thërrasë: proxy + encoded target url.
-    Kjo nuk është ExpressVPN direkt; duhet proxy/VPS i veçantë.
-    """
     proxy = (client.get("proxy_url") or "").strip()
     if not proxy:
         return target_url
@@ -168,6 +164,8 @@ def request_get(url, client=None):
     final_url = proxy_fetch_url(client or {}, url)
     return requests.get(final_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
 
+
+# ---------------- API / M3U ----------------
 
 def check_api_from_link(m3u_link, client=None):
     p = parse_m3u_link(m3u_link)
@@ -221,6 +219,8 @@ def fetch_m3u(m3u_link, output="ts", client=None):
     return text
 
 
+# ---------------- M3U processing ----------------
+
 def extract_group(extinf_line):
     m = re.search(r'group-title="([^"]*)"', extinf_line)
     return m.group(1) if m else "Pa grup"
@@ -228,6 +228,11 @@ def extract_group(extinf_line):
 
 def extract_name(extinf_line):
     return extinf_line.split(",", 1)[-1].strip() if "," in extinf_line else extinf_line.strip()
+
+
+def extract_logo(extinf_line):
+    m = re.search(r'tvg-logo="([^"]*)"', extinf_line)
+    return m.group(1) if m else ""
 
 
 def group_priority(group, order):
@@ -254,6 +259,7 @@ def parse_m3u_items(text):
                     "url": url,
                     "group": extract_group(line),
                     "name": extract_name(line),
+                    "logo": extract_logo(line),
                 })
                 i += 2
                 continue
@@ -389,14 +395,20 @@ def login_required():
     return session.get("logged_in") is True
 
 
-BASE_HTML = """
+def client_login_required():
+    return bool(session.get("client_slug"))
+
+
+# ---------------- HTML layouts ----------------
+
+ADMIN_HTML = """
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>IPTV Cloud Panel V3</title>
+  <title>Nox IPTV Panel V4</title>
   <style>
-    :root { --bg:#0f172a; --card:#111827; --card2:#ffffff; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
+    :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
     .top { background:linear-gradient(135deg,#0f172a,#1e3a8a); color:white; padding:28px; }
     .top h1 { margin:0 0 8px; font-size:28px; }
@@ -428,8 +440,8 @@ BASE_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>IPTV Cloud Panel V3</h1>
-      <p>Master template, client links, refresh, download, cache, status checks.</p>
+      <h1>Nox IPTV Panel V4</h1>
+      <p>Admin panel + Client portal + Web player.</p>
       {% if logged %}
       <div class="nav">
         <a class="btn" href="/">Dashboard</a>
@@ -450,11 +462,55 @@ BASE_HTML = """
 </html>
 """
 
+CLIENT_HTML = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nox IPTV Watch</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#0b1220; color:#e5e7eb; }
+    .top { background:#111827; padding:14px; position:sticky; top:0; z-index:10; }
+    .top h2 { margin:0 0 8px; font-size:20px; }
+    .bar { display:flex; gap:8px; flex-wrap:wrap; }
+    input, select { padding:10px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:white; flex:1; min-width:160px; }
+    .btn { background:#2563eb; color:white; padding:10px 12px; border-radius:10px; text-decoration:none; border:0; display:inline-block; cursor:pointer; }
+    .btn.gray { background:#475569; }
+    .btn.red { background:#dc2626; }
+    .wrap { padding:12px; max-width:1100px; margin:auto; }
+    video { width:100%; background:#000; border-radius:14px; max-height:55vh; }
+    .player { background:#111827; padding:12px; border-radius:16px; margin-bottom:14px; }
+    .now { font-weight:700; margin:8px 0; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+    .ch { background:#111827; border:1px solid #1f2937; border-radius:14px; padding:10px; cursor:pointer; }
+    .ch:hover { border-color:#2563eb; }
+    .logo { width:42px; height:42px; object-fit:contain; float:left; margin-right:10px; background:#fff1; border-radius:8px; }
+    .name { font-size:14px; font-weight:700; min-height:38px; }
+    .group { font-size:12px; color:#94a3b8; margin-top:6px; clear:both; }
+    .hint { color:#94a3b8; font-size:13px; }
+    code { word-break:break-all; background:#020617; padding:4px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  {{ body|safe }}
+</body>
+</html>
+"""
 
-def page(body):
-    return render_template_string(BASE_HTML, body=body, logged=login_required())
+
+def admin_page(body):
+    return render_template_string(ADMIN_HTML, body=body, logged=login_required())
 
 
+def client_page(body):
+    return render_template_string(CLIENT_HTML, body=body)
+
+
+# ---------------- Admin routes ----------------
+
+@app.route("/admin-login", methods=["GET", "POST"])
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
@@ -465,20 +521,21 @@ def login():
         error = "Password gabim."
     body = f"""
     <div class="card" style="max-width:480px;margin:50px auto;">
-      <h2>Login</h2>
+      <h2>Admin Login</h2>
       <form method="post">
         <input type="password" name="password" placeholder="Admin password">
         <button>Login</button>
       </form>
       <p class="bad">{error}</p>
+      <p class="small">Client portal është te <code>/watch</code></p>
     </div>
     """
-    return page(body)
+    return admin_page(body)
 
 
 @app.route("/logout")
 def logout():
-    session.clear()
+    session.pop("logged_in", None)
     return redirect("/login")
 
 
@@ -504,11 +561,12 @@ def dashboard():
     rows = ""
     for slug, c in sorted(clients.items()):
         public_url = request.url_root.rstrip("/") + url_for("playlist", slug=slug)
+        watch_url = request.url_root.rstrip("/") + "/watch"
         mode = c.get("mode", "source_link")
         rows += f"""
         <tr>
           <td><b>{c.get('name')}</b><br><span class="small">{slug}</span></td>
-          <td><code>{public_url}</code></td>
+          <td><code>{public_url}</code><br><span class="small">Watch portal: <code>{watch_url}</code></span></td>
           <td>{mode}</td>
           <td>{c.get('output','ts')}</td>
           <td>{c.get('last_channels','-')}</td>
@@ -527,14 +585,14 @@ def dashboard():
     {stat_html}
     <div class="card">
       <h2>Clients</h2>
-      <p class="small">Për renditje ekzakte nga Master Template, mos e aktivizo “Sort groups automatically”.</p>
+      <p class="small">Client portal për telefon/laptop: <code>{request.url_root.rstrip()}/watch</code></p>
       <table>
-        <tr><th>Client</th><th>Permanent URL</th><th>Mode</th><th>Output</th><th>Channels</th><th>Last update</th><th>Actions</th></tr>
+        <tr><th>Client</th><th>Links</th><th>Mode</th><th>Output</th><th>Channels</th><th>Last update</th><th>Actions</th></tr>
         {rows or '<tr><td colspan="7">Nuk ka klientë ende.</td></tr>'}
       </table>
     </div>
     """
-    return page(body)
+    return admin_page(body)
 
 
 @app.route("/template", methods=["GET", "POST"])
@@ -562,19 +620,15 @@ def template():
     </div>
     <div class="card">
       <h2>Master Template</h2>
-      <p>Vendose këtu playlistën kryesore me renditjen tënde. Ajo përdoret për të gjithë klientët template-mode.</p>
-      {msg}
       <form method="post">
         <textarea name="template_text" rows="24" placeholder="#EXTM3U...">{text}</textarea>
         <button>Save Master Template</button>
       </form>
+      {msg}
     </div>
-    <div class="card">
-      <h3>Top Groups Preview</h3>
-      <ul>{groups or '<li>Pa grupe ende</li>'}</ul>
-    </div>
+    <div class="card"><h3>Top Groups</h3><ul>{groups or '<li>Pa grupe ende</li>'}</ul></div>
     """
-    return page(body)
+    return admin_page(body)
 
 
 @app.route("/add", methods=["GET", "POST"])
@@ -590,9 +644,12 @@ def add_edit(slug=None):
         name = request.form.get("name", "").strip()
         mode = request.form.get("mode", "source_link")
         if not name:
-            return page("<p class='bad'>Client name është i detyrueshëm.</p>")
+            return admin_page("<p class='bad'>Client name është i detyrueshëm.</p>")
 
         new_slug = slug or slugify(name)
+        portal_user = request.form.get("portal_user", "").strip() or new_slug
+        portal_password = request.form.get("portal_password", "").strip() or client.get("portal_password", "1234")
+
         data = {
             "name": name,
             "mode": mode,
@@ -603,6 +660,9 @@ def add_edit(slug=None):
             "remove_duplicates": request.form.get("remove_duplicates") == "on",
             "group_order": request.form.get("group_order", ""),
             "proxy_url": request.form.get("proxy_url", "").strip(),
+            "portal_user": portal_user,
+            "portal_password": portal_password,
+            "allow_watch": request.form.get("allow_watch") == "on",
             "created": client.get("created") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "last_update": client.get("last_update"),
             "last_channels": client.get("last_channels"),
@@ -613,13 +673,13 @@ def add_edit(slug=None):
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "").strip()
             if not server or not username or not password:
-                return page("<p class='bad'>Në Template mode duhen server, username dhe password.</p>")
+                return admin_page("<p class='bad'>Në Template mode duhen server, username dhe password.</p>")
             data.update({"server": server, "username": username, "password": password})
             data["m3u_link"] = f"{server.rstrip('/')}/get.php?username={username}&password={password}&type=m3u_plus&output={data['output']}"
         else:
             m3u_link = request.form.get("m3u_link", "").strip()
             if not m3u_link:
-                return page("<p class='bad'>M3U source link është i detyrueshëm.</p>")
+                return admin_page("<p class='bad'>M3U source link është i detyrueshëm.</p>")
             parse_m3u_link(m3u_link)
             data["m3u_link"] = m3u_link
 
@@ -639,6 +699,14 @@ def add_edit(slug=None):
       <form method="post">
         <label>Client name</label>
         <input name="name" value="{client.get('name','')}" placeholder="p.sh. Nox">
+
+        <label>Client Portal Username</label>
+        <input name="portal_user" value="{client.get('portal_user', slug or '')}" placeholder="p.sh. nox">
+
+        <label>Client Portal Password</label>
+        <input name="portal_password" value="{client.get('portal_password','1234')}" placeholder="p.sh. 1234">
+
+        <label><input style="width:auto" type="checkbox" name="allow_watch" {"checked" if client.get("allow_watch", True) else ""}> Allow client portal / web player</label><br><br>
 
         <label>Mode</label>
         <select name="mode">
@@ -671,7 +739,6 @@ def add_edit(slug=None):
 
         <label>Optional Proxy URL / VPN gateway</label>
         <input name="proxy_url" value="{client.get('proxy_url','')}" placeholder="p.sh. https://proxy-domain/fetch?url=">
-        <p class="small">ExpressVPN në PC nuk vlen për Render. Kjo fushë përdoret vetëm nëse ke proxy/VPS tënd.</p>
 
         <label>Replace from host/server optional</label>
         <input name="replace_from" value="{client.get('replace_from','')}" placeholder="http://oldhost.com ose oldhost.com">
@@ -689,7 +756,7 @@ def add_edit(slug=None):
       </form>
     </div>
     """
-    return page(body)
+    return admin_page(body)
 
 
 @app.route("/check/<slug>")
@@ -714,7 +781,7 @@ def check(slug):
       <pre>{json.dumps(info, ensure_ascii=False, indent=2)}</pre>
     </div>
     """
-    return page(body)
+    return admin_page(body)
 
 
 @app.route("/refresh/<slug>")
@@ -725,7 +792,7 @@ def refresh(slug):
         get_playlist_for_client(slug, force_refresh=True)
         return redirect("/")
     except Exception as e:
-        return page(f"<div class='card'><p class='bad'>Refresh problem: {e}</p></div>")
+        return admin_page(f"<div class='card'><p class='bad'>Refresh problem: {e}</p></div>")
 
 
 @app.route("/bulk-refresh")
@@ -741,7 +808,7 @@ def bulk_refresh():
         except Exception as e:
             results.append((slug, str(e)))
     lis = "".join(f"<li><b>{s}</b>: {r}</li>" for s, r in results)
-    return page(f"<div class='card'><h2>Bulk Refresh Results</h2><ul>{lis}</ul></div>")
+    return admin_page(f"<div class='card'><h2>Bulk Refresh Results</h2><ul>{lis}</ul></div>")
 
 
 @app.route("/clear-cache")
@@ -749,7 +816,7 @@ def clear_cache():
     if not login_required():
         return redirect("/login")
     count = clear_all_cache()
-    return page(f"<div class='card'><h2>Cache cleared</h2><p>{count} playlist cache files deleted.</p></div>")
+    return admin_page(f"<div class='card'><h2>Cache cleared</h2><p>{count} playlist cache files deleted.</p></div>")
 
 
 @app.route("/download/<slug>")
@@ -785,34 +852,6 @@ def export_json():
     return Response(data, mimetype="application/json", headers={"Content-Disposition": "attachment; filename=clients_export.json"})
 
 
-@app.route("/import", methods=["GET", "POST"])
-def import_json():
-    if not login_required():
-        return redirect("/login")
-    msg = ""
-    if request.method == "POST":
-        try:
-            data = json.loads(request.form.get("json_data", "{}"))
-            if not isinstance(data, dict):
-                raise ValueError("JSON duhet të jetë object/dict.")
-            save_clients(data)
-            clear_all_cache()
-            msg = "<p class='ok'>Import u krye.</p>"
-        except Exception as e:
-            msg = f"<p class='bad'>Import problem: {e}</p>"
-    body = f"""
-    <div class="card">
-      <h2>Import Clients JSON</h2>
-      {msg}
-      <form method="post">
-        <textarea name="json_data" rows="20" placeholder="{{...}}"></textarea>
-        <button>Import</button>
-      </form>
-    </div>
-    """
-    return page(body)
-
-
 @app.route("/p/<slug>.m3u")
 def playlist(slug):
     try:
@@ -820,6 +859,182 @@ def playlist(slug):
         return Response(text, mimetype="audio/x-mpegurl")
     except Exception as e:
         return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="text/plain", status=500)
+
+
+# ---------------- Client Portal ----------------
+
+@app.route("/watch", methods=["GET", "POST"])
+def watch_login():
+    if request.method == "POST":
+        u = request.form.get("username", "").strip()
+        p = request.form.get("password", "").strip()
+        clients = load_clients()
+        for slug, c in clients.items():
+            if not c.get("allow_watch", True):
+                continue
+            if c.get("portal_user") == u and c.get("portal_password") == p:
+                session["client_slug"] = slug
+                return redirect("/watch/home")
+        return client_page("""
+        <div class="top"><h2>Nox IPTV Watch</h2></div>
+        <div class="wrap"><div class="player"><p style="color:#fca5a5">Login gabim.</p><a class="btn" href="/watch">Provo prapë</a></div></div>
+        """)
+
+    body = """
+    <div class="top"><h2>Nox IPTV Watch</h2></div>
+    <div class="wrap">
+      <div class="player">
+        <h3>Client Login</h3>
+        <form method="post">
+          <input name="username" placeholder="Username">
+          <input name="password" type="password" placeholder="Password">
+          <button class="btn">Login</button>
+        </form>
+      </div>
+    </div>
+    """
+    return client_page(body)
+
+
+@app.route("/watch/logout")
+def watch_logout():
+    session.pop("client_slug", None)
+    return redirect("/watch")
+
+
+@app.route("/watch/home")
+def watch_home():
+    if not client_login_required():
+        return redirect("/watch")
+
+    slug = session["client_slug"]
+    clients = load_clients()
+    c = clients.get(slug)
+    if not c or not c.get("allow_watch", True):
+        return redirect("/watch/logout")
+
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+    except Exception as e:
+        return client_page(f"""
+        <div class="top"><h2>Nox IPTV Watch</h2></div>
+        <div class="wrap"><div class="player"><p>Problem: {e}</p></div></div>
+        """)
+
+    groups = sorted(set(i["group"] for i in items))
+    safe_items = []
+    for idx, it in enumerate(items):
+        safe_items.append({
+            "i": idx,
+            "name": it["name"],
+            "group": it["group"],
+            "logo": it["logo"],
+            "url": it["url"],
+        })
+
+    data_json = json.dumps(safe_items, ensure_ascii=False)
+    m3u_url = url_for("client_download_m3u")
+    body = f"""
+    <div class="top">
+      <h2>{c.get('name')} - Nox IPTV Watch</h2>
+      <div class="bar">
+        <input id="search" placeholder="Kërko kanal...">
+        <select id="group">
+          <option value="">Të gjitha kategoritë</option>
+          {''.join(f'<option value="{g}">{g}</option>' for g in groups)}
+        </select>
+        <a class="btn gray" href="{m3u_url}">Download M3U</a>
+        <a class="btn red" href="/watch/logout">Logout</a>
+      </div>
+    </div>
+    <div class="wrap">
+      <div class="player">
+        <video id="video" controls playsinline></video>
+        <div class="now" id="now">Zgjedh një kanal.</div>
+        <div class="hint" id="hint">M3U8 hapet brenda browserit. TS/MPEGTS mund të kërkojë VLC/IPTV app.</div>
+        <p><a class="btn" id="openExternal" href="#" target="_blank">Open Stream</a>
+        <button class="btn gray" onclick="copyUrl()">Copy URL</button></p>
+        <p class="hint">Nëse video nuk hapet në browser, përdor Open Stream ose shkarko M3U.</p>
+      </div>
+      <div class="grid" id="channels"></div>
+    </div>
+    <script>
+      const channels = {data_json};
+      let currentUrl = "";
+
+      function playChannel(ch) {{
+        currentUrl = ch.url;
+        document.getElementById("now").innerText = ch.name + " — " + ch.group;
+        document.getElementById("openExternal").href = ch.url;
+        const video = document.getElementById("video");
+
+        if (ch.url.includes(".m3u8")) {{
+          if (Hls.isSupported()) {{
+            if (window.hls) window.hls.destroy();
+            window.hls = new Hls();
+            window.hls.loadSource(ch.url);
+            window.hls.attachMedia(video);
+            window.hls.on(Hls.Events.MANIFEST_PARSED, function() {{ video.play(); }});
+          }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
+            video.src = ch.url;
+            video.play();
+          }}
+          document.getElementById("hint").innerText = "HLS/M3U8 player aktiv.";
+        }} else {{
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+          document.getElementById("hint").innerText = "Ky stream duket TS/MPEGTS. Browseri mund të mos e hapë; provo Open Stream ose VLC.";
+          window.open(ch.url, "_blank");
+        }}
+      }}
+
+      function render() {{
+        const q = document.getElementById("search").value.toLowerCase();
+        const g = document.getElementById("group").value;
+        const box = document.getElementById("channels");
+        box.innerHTML = "";
+        channels.filter(ch => {{
+          return (!q || ch.name.toLowerCase().includes(q)) && (!g || ch.group === g);
+        }}).slice(0, 500).forEach(ch => {{
+          const div = document.createElement("div");
+          div.className = "ch";
+          div.onclick = () => playChannel(ch);
+          div.innerHTML = `
+            ${{ch.logo ? `<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">` : ""}}
+            <div class="name">${{ch.name}}</div>
+            <div class="group">${{ch.group}}</div>
+          `;
+          box.appendChild(div);
+        }});
+      }}
+
+      function copyUrl() {{
+        if (!currentUrl) return;
+        navigator.clipboard.writeText(currentUrl);
+        alert("URL u kopjua.");
+      }}
+
+      document.getElementById("search").addEventListener("input", render);
+      document.getElementById("group").addEventListener("change", render);
+      render();
+    </script>
+    """
+    return client_page(body)
+
+
+@app.route("/watch/m3u")
+def client_download_m3u():
+    if not client_login_required():
+        return redirect("/watch")
+    slug = session["client_slug"]
+    text = get_playlist_for_client(slug, force_refresh=False)
+    return Response(
+        text,
+        mimetype="audio/x-mpegurl",
+        headers={"Content-Disposition": f"attachment; filename={slug}.m3u"}
+    )
 
 
 @app.route("/health")
