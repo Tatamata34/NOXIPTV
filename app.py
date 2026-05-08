@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.1
+NOX IPTV CLOUD PANEL V4.2
 -----------------------
 Admin panel + Client Portal + Web Player.
 
@@ -406,7 +406,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.1</title>
+  <title>Nox IPTV Panel V4.2</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -440,7 +440,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4.1</h1>
+      <h1>Nox IPTV Panel V4.2</h1>
       <p>Admin panel + Client portal + Web player.</p>
       {% if logged %}
       <div class="nav">
@@ -470,6 +470,7 @@ CLIENT_HTML = """
   <title>Nox IPTV Watch</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <style>
     body { margin:0; font-family:Arial,sans-serif; background:#0b1220; color:#e5e7eb; }
     .top { background:#111827; padding:14px; position:sticky; top:0; z-index:10; }
@@ -969,6 +970,10 @@ def watch_home():
           window.hls.destroy();
           window.hls = null;
         }}
+        if (window.tsPlayer) {{
+          try {{ window.tsPlayer.destroy(); }} catch(e) {{}}
+          window.tsPlayer = null;
+        }}
 
         video.pause();
         video.removeAttribute("src");
@@ -976,10 +981,12 @@ def watch_home():
 
         video.onerror = function() {{
           document.getElementById("hint").innerText =
-            "Ky kanal nuk u hap në browser. Zakonisht ndodh kur stream është TS/MPEGTS dhe jo HLS/M3U8.";
+            "Ky kanal nuk u hap në browser. Nëse provider-i nuk jep CORS/HLS, duhet VPS HLS relay.";
         }};
 
-        if (ch.url.toLowerCase().includes(".m3u8")) {{
+        const lower = ch.url.toLowerCase();
+
+        if (lower.includes(".m3u8")) {{
           if (Hls.isSupported()) {{
             window.hls = new Hls({{
               maxBufferLength: 30,
@@ -997,18 +1004,44 @@ def watch_home():
                   "HLS error: kanali nuk u hap në browser.";
               }}
             }});
+            document.getElementById("hint").innerText = "HLS/M3U8 player aktiv...";
           }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
             video.src = ch.url;
             video.play().catch(() => {{}});
+            document.getElementById("hint").innerText = "Native HLS player aktiv...";
+          }} else {{
+            document.getElementById("hint").innerText = "Ky browser nuk suporton HLS.";
           }}
-          document.getElementById("hint").innerText = "Duke provuar HLS/M3U8 në browser...";
         }} else {{
-          video.src = ch.url;
-          video.play().catch(() => {{
-            document.getElementById("hint").innerText =
-              "Browseri nuk e hapi këtë format. Për shikim 100% në browser duhet stream/output m3u8 nga provider-i.";
-          }});
-          document.getElementById("hint").innerText = "Duke provuar direct playback në browser...";
+          // MPEG-TS live stream attempt via mpegts.js.
+          // Works only on browsers with MediaSource and if provider allows CORS.
+          if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
+            try {{
+              window.tsPlayer = mpegts.createPlayer({{
+                type: "mpegts",
+                isLive: true,
+                url: ch.url,
+                enableStashBuffer: false,
+                stashInitialSize: 128
+              }});
+              window.tsPlayer.attachMediaElement(video);
+              window.tsPlayer.load();
+              window.tsPlayer.play();
+              document.getElementById("hint").innerText =
+                "MPEG-TS player aktiv. Në iPhone Safari mund të mos punojë nëse mungon CORS.";
+            }} catch(e) {{
+              document.getElementById("hint").innerText =
+                "MPEG-TS nuk u hap. Duhet HLS relay/transcoding në VPS.";
+            }}
+          }} else {{
+            // Fallback direct playback
+            video.src = ch.url;
+            video.play().catch(() => {{
+              document.getElementById("hint").innerText =
+                "Browseri nuk e hapi TS/MPEGTS. Duhet HLS/M3U8 ose VPS relay.";
+            }});
+            document.getElementById("hint").innerText = "Duke provuar direct playback...";
+          }}
         }}
       }}
 
