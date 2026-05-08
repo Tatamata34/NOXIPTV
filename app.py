@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.2
+NOX IPTV CLOUD PANEL V4.3
 -----------------------
 Admin panel + Client Portal + Web Player.
 
@@ -406,7 +406,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.2</title>
+  <title>Nox IPTV Panel V4.3</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -440,7 +440,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4.2</h1>
+      <h1>Nox IPTV Panel V4.3</h1>
       <p>Admin panel + Client portal + Web player.</p>
       {% if logged %}
       <div class="nav">
@@ -952,7 +952,11 @@ def watch_home():
         <video id="video" controls playsinline></video>
         <div class="now" id="now">Zgjedh një kanal.</div>
         <div class="hint" id="hint">Zgjedh një kanal. Player-i do të provojë ta hapë direkt në browser.</div>
-        <p class="hint">Shikimi është vetëm brenda këtij player-i.</p>
+        <p>
+          <a class="btn" id="openVlc" href="#" target="_blank">Open in VLC</a>
+          <button class="btn gray" onclick="copyUrl()">Copy URL</button>
+        </p>
+        <p class="hint">Nëse browseri nuk e hap kanalin, përdor Open in VLC.</p>
         <p class="hint">Nëse një kanal nuk hapet, ai format mund të mos suportohet nga browseri. Për shikim 100% në browser kërko output m3u8/HLS.</p>
       </div>
       <div class="grid" id="channels"></div>
@@ -964,6 +968,10 @@ def watch_home():
       function playChannel(ch) {{
         currentUrl = ch.url;
         document.getElementById("now").innerText = ch.name + " — " + ch.group;
+        const vlcLink = document.getElementById("openVlc");
+        if (vlcLink) {{
+          vlcLink.href = "vlc://" + ch.url;
+        }}
         const video = document.getElementById("video");
 
         if (window.hls) {{
@@ -981,7 +989,7 @@ def watch_home():
 
         video.onerror = function() {{
           document.getElementById("hint").innerText =
-            "Ky kanal nuk u hap në browser. Nëse provider-i nuk jep CORS/HLS, duhet VPS HLS relay.";
+            "Ky kanal nuk u hap në browser. Provo Open in VLC.";
         }};
 
         const lower = ch.url.toLowerCase();
@@ -1038,11 +1046,23 @@ def watch_home():
             video.src = ch.url;
             video.play().catch(() => {{
               document.getElementById("hint").innerText =
-                "Browseri nuk e hapi TS/MPEGTS. Duhet HLS/M3U8 ose VPS relay.";
+                "Browseri nuk e hapi TS/MPEGTS. Provo Open in VLC ose duhet HLS/M3U8/VPS relay.";
             }});
             document.getElementById("hint").innerText = "Duke provuar direct playback...";
           }}
         }}
+      }}
+
+      function copyUrl() {{
+        if (!currentUrl) {{
+          alert("Zgjedh një kanal së pari.");
+          return;
+        }}
+        navigator.clipboard.writeText(currentUrl).then(() => {{
+          alert("URL u kopjua.");
+        }}).catch(() => {{
+          alert("Nuk u kopjua dot automatikisht.");
+        }});
       }}
 
       function render() {{
