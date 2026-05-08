@@ -1,30 +1,17 @@
-# Nox IPTV Cloud Panel V4
+# Nox IPTV Cloud Panel V4.1
 
-## Çka shton V4
+## Ndryshimet V4.1
 
 - Client Portal: `/watch`
-- Çdo klient ka portal username/password
-- Klienti sheh kanalet nga telefoni/laptopi
-- Search + group filter
-- Web player për HLS/M3U8
-- Për TS/MPEGTS: Open Stream / Copy URL / Download M3U
-- Admin panel mbetet si më parë
+- Nuk ka më Download M3U te klienti
+- Nuk ka Copy URL / Open Stream te klienti
+- Klienti shikon vetëm brenda web player-it
+- Player provon HLS/M3U8 me hls.js
+- Për TS/MPEGTS provon direct playback në browser, por jo çdo browser e suporton
 
-## E rëndësishme
+## Shënim teknik
 
-Paneli nuk e kalon video stream-in përmes Render. Stream hapet direkt te provider-i nga pajisja e klientit.
-Kjo e mban bandwidth-in e Render shumë të ulët.
+Për shikim 100% brenda browserit, stream-et duhet të jenë HLS/M3U8.
+Nëse provider-i jep vetëm TS/MPEGTS, disa browsera mund të mos e hapin.
 
-## Deploy
-
-Build:
-pip install -r requirements.txt
-
-Start:
-gunicorn app:app
-
-Env:
-ADMIN_PASSWORD=...
-SECRET_KEY=...
-CACHE_SECONDS=300
-REQUEST_TIMEOUT=120
+Paneli nuk e proxy-on video stream-in përmes Render, prandaj nuk harxhon shumë bandwidth.
