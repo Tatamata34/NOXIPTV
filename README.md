@@ -1,16 +1,13 @@
-# Nox IPTV Cloud Panel V4.5
+# Nox IPTV Cloud Panel V4.6
 
 New:
-- Backup All and Restore
-- Import/Export Master Template
-- Status page
-- Duplicate client
-- Favourite marker
-- Private client notes
-- Direct VLC open on client portal click
-- Native Android API
-- Improved /health for UptimeRobot
+- Browser player inside /watch
+- MPEG-TS same-origin stream proxy /watch/stream/<id>
+- Click channel -> video opens in browser player on PC/Android
+- VLC remains fallback
+- Import Clients from backup JSON
+- Restore full backup
+- Backup All
 
-Render Free:
-Use /health every 5 minutes in UptimeRobot.
-Use Backup All often because free storage may reset.
+Important:
+TS/MPEGTS through browser now uses Render bandwidth while watching.
