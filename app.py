@@ -390,7 +390,7 @@ def client_login_required():
 
 
 
-# ---------------- V5.1 FULL helpers ----------------
+# ---------------- V5.2 FULL helpers ----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -410,6 +410,13 @@ def get_settings():
         "brand_name": "Nox IPTV",
         "brand_color": "#2563eb",
         "accent_color": "#16a34a",
+        "background_color": "#0b1220",
+        "card_color": "#111827",
+        "text_color": "#e5e7eb",
+        "layout_mode": "sidebar",
+        "player_position": "top",
+        "card_style": "rounded",
+        "channel_columns": "auto",
         "dark_mode": True,
         "smart_engine": True,
         "auto_fallback": True,
@@ -418,9 +425,10 @@ def get_settings():
         "fast_zapping": True,
         "pwa": True,
         "custom_categories": {
-            "Shqip": ["AL|", "ALBANIA", "KOSOVA", "KOSOVO", "SHQIP"],
-            "Sport": ["SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA", "EUROSPORT"],
-            "Gjermani": ["DE|", "GERMANY", "DEUTSCHLAND", "ZDF", "RTL", "SAT"]
+            "Sport": [
+                "ART SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA SPORT",
+                "EUROSPORT", "FIGHT BOX", "FIGHTBOX"
+            ]
         }
     }
     s = load_json_file(SETTINGS_FILE, default)
@@ -1293,13 +1301,10 @@ def watch_home():
       <div class="bar">
         <input id="search" placeholder="Kërko kanal...">
         <select id="group">
-          <option value="">Të gjitha kategoritë</option>
+          <option value="">Të gjitha</option>
           <option value="__fav">⭐ Favorites</option>
-          <option value="__recent">🕘 Recently watched</option>
-          <option value="Shqip">Shqip</option>
+          <option value="__recent">🕘 Recent</option>
           <option value="Sport">Sport</option>
-          <option value="Gjermani">Gjermani</option>
-          {''.join(f'<option value="{g}">{g}</option>' for g in groups)}
         </select>
         <a class="btn red" href="/watch/logout">Logout</a>
       </div>
@@ -1309,9 +1314,7 @@ def watch_home():
         <button class="btn cat active" onclick="setGroup('')">Të gjitha</button>
         <button class="btn cat" onclick="setGroup('__fav')">⭐ Favorites</button>
         <button class="btn cat" onclick="setGroup('__recent')">🕘 Recent</button>
-        <button class="btn cat" onclick="setGroup('Shqip')">Shqip</button>
         <button class="btn cat" onclick="setGroup('Sport')">Sport</button>
-        <button class="btn cat" onclick="setGroup('Gjermani')">Gjermani</button>
       </div>
       <div>
         <div class="player">
@@ -1347,11 +1350,12 @@ def watch_home():
 
       function customCategory(ch) {{
         const text = ((ch.name || "") + " " + (ch.group || "")).toUpperCase();
-        const cats = settings.custom_categories || {{}};
-        for (const cat in cats) {{
-          for (const key of cats[cat]) {{
-            if (text.includes(String(key).toUpperCase())) return cat;
-          }}
+        const sportKeys = [
+          "ART SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA SPORT",
+          "EUROSPORT", "FIGHT BOX", "FIGHTBOX"
+        ];
+        for (const key of sportKeys) {{
+          if (text.includes(key)) return "Sport";
         }}
         return ch.group;
       }}
@@ -1363,11 +1367,18 @@ def watch_home():
       }}
 
       function updateExternalLinks(url) {{
-        const clean = url.replace(/^https?:\\/\\//, "");
-        const androidIntent = "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
-        document.getElementById("openVlcAndroid").href = androidIntent;
-        document.getElementById("openVlcClassic").href = "vlc://" + url;
-        document.getElementById("openDirect").href = url;
+        const clean = url.replace(/^https?:\/\//, "");
+        const directIntent = "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
+        const httpsIntent = url.startsWith("https://")
+          ? "intent://" + clean + "#Intent;scheme=https;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end"
+          : directIntent;
+        const classic = "vlc://" + url;
+        const a1 = document.getElementById("openVlcAndroid");
+        const a2 = document.getElementById("openVlcClassic");
+        const a3 = document.getElementById("openDirect");
+        if (a1) a1.href = httpsIntent;
+        if (a2) a2.href = classic;
+        if (a3) a3.href = url;
       }}
 
       function markRecent(ch) {{
@@ -1464,11 +1475,8 @@ def watch_home():
         hint.innerText = "Duke provuar direct...";
         video.src = ch.url;
         video.play().catch(() => {{
-          hint.innerText = "Browser nuk e hapi. Përdor VLC Android/Classic.";
-          const ua = navigator.userAgent.toLowerCase();
-          if (settings.vlc_auto_fallback && ua.includes("android")) {{
-            setTimeout(() => {{ window.location.href = document.getElementById("openVlcAndroid").href; }}, 800);
-          }}
+          hint.innerText = "Browser nuk e hapi. Provo Open VLC Android ose Open Direct.";
+          // Auto VLC redirect disabled in V5.2; buttons remain as fallback.
         }});
       }}
 
@@ -1485,7 +1493,7 @@ def watch_home():
           let okGroup = true;
           if (g === "__fav") okGroup = favs.includes(ch.i);
           else if (g === "__recent") okGroup = rec.includes(ch.i);
-          else if (g === "Shqip" || g === "Sport" || g === "Gjermani") okGroup = customCategory(ch) === g;
+          else if (g === "Sport") okGroup = customCategory(ch) === "Sport";
           else okGroup = (!g || ch.group === g);
           return (!q || ch.name.toLowerCase().includes(q)) && okGroup;
         }}).slice(0, 800).forEach(ch => {{
@@ -1625,6 +1633,11 @@ def settings_page():
         s["brand_name"] = request.form.get("brand_name", "Nox IPTV")
         s["brand_color"] = request.form.get("brand_color", "#2563eb")
         s["accent_color"] = request.form.get("accent_color", "#16a34a")
+        s["background_color"] = request.form.get("background_color", "#0b1220")
+        s["card_color"] = request.form.get("card_color", "#111827")
+        s["text_color"] = request.form.get("text_color", "#e5e7eb")
+        s["layout_mode"] = request.form.get("layout_mode", "sidebar")
+        s["player_position"] = request.form.get("player_position", "top")
         s["smart_engine"] = request.form.get("smart_engine") == "on"
         s["auto_fallback"] = request.form.get("auto_fallback") == "on"
         s["vlc_auto_fallback"] = request.form.get("vlc_auto_fallback") == "on"
@@ -1636,6 +1649,19 @@ def settings_page():
         <label>Brand name</label><input name="brand_name" value="{s.get('brand_name','Nox IPTV')}">
         <label>Brand color</label><input name="brand_color" value="{s.get('brand_color','#2563eb')}">
         <label>Accent color</label><input name="accent_color" value="{s.get('accent_color','#16a34a')}">
+        <label>Background color</label><input name="background_color" value="{s.get('background_color','#0b1220')}">
+        <label>Card color</label><input name="card_color" value="{s.get('card_color','#111827')}">
+        <label>Text color</label><input name="text_color" value="{s.get('text_color','#e5e7eb')}">
+        <label>Layout mode</label>
+        <select name="layout_mode">
+          <option value="sidebar" {'selected' if s.get('layout_mode')=='sidebar' else ''}>Sidebar</option>
+          <option value="topbar" {'selected' if s.get('layout_mode')=='topbar' else ''}>Topbar</option>
+        </select>
+        <label>Player position</label>
+        <select name="player_position">
+          <option value="top" {'selected' if s.get('player_position')=='top' else ''}>Top</option>
+          <option value="sticky" {'selected' if s.get('player_position')=='sticky' else ''}>Sticky</option>
+        </select>
         <label><input style="width:auto" type="checkbox" name="smart_engine" {'checked' if s.get('smart_engine') else ''}> Smart stream engine</label><br>
         <label><input style="width:auto" type="checkbox" name="auto_fallback" {'checked' if s.get('auto_fallback') else ''}> Auto fallback</label><br>
         <label><input style="width:auto" type="checkbox" name="vlc_auto_fallback" {'checked' if s.get('vlc_auto_fallback') else ''}> Auto VLC fallback on Android</label><br><br>
