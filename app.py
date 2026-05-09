@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.5
+NOX IPTV CLOUD PANEL V4.6
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -390,7 +390,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.5</title>
+  <title>Nox IPTV Panel V4.6</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -424,7 +424,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4.5</h1>
+      <h1>Nox IPTV Panel V4.6</h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -436,6 +436,7 @@ ADMIN_HTML = """
         <a class="btn gray" href="/clear-cache">Clear Cache</a>
         <a class="btn dark" href="/backup">Backup All</a>
         <a class="btn dark" href="/restore">Restore</a>
+        <a class="btn dark" href="/import-clients">Import Clients</a>
         <a class="btn gray" href="/export-template">Export Template</a>
         <a class="btn gray" href="/import-template">Import Template</a>
         <a class="btn dark" href="/export">Export Clients</a>
@@ -456,7 +457,9 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV VLC Portal</title>
+  <title>Nox IPTV Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { margin:0; font-family:Arial,sans-serif; background:#0b1220; color:#e5e7eb; }
@@ -469,6 +472,7 @@ CLIENT_HTML = """
     .btn.red { background:#dc2626; }
     .wrap { padding:12px; max-width:1100px; margin:auto; }
     .player { background:#111827; padding:12px; border-radius:16px; margin-bottom:14px; }
+    video { width:100%; max-height:55vh; background:#000; border-radius:14px; margin-bottom:10px; }
     .now { font-weight:700; margin:8px 0; }
     .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
     .ch { background:#111827; border:1px solid #1f2937; border-radius:14px; padding:10px; cursor:pointer; }
@@ -899,12 +903,49 @@ def export_json():
     return Response(data, mimetype="application/json", headers={"Content-Disposition": "attachment; filename=clients_export.json"})
 
 
+
+@app.route("/import-clients", methods=["GET", "POST"])
+def import_clients():
+    if not login_required():
+        return redirect("/login")
+    msg = ""
+    if request.method == "POST":
+        try:
+            raw = request.form.get("clients_json", "").strip()
+            uploaded = request.files.get("clients_file")
+            if uploaded and uploaded.filename:
+                raw = uploaded.read().decode("utf-8", errors="ignore")
+            data = json.loads(raw)
+            clients = data.get("clients", data)
+            if not isinstance(clients, dict):
+                raise ValueError("Clients JSON nuk është valid.")
+            save_clients(clients)
+            clear_all_cache()
+            msg = "<p class='ok'>Clients u importuan me sukses.</p>"
+        except Exception as e:
+            msg = f"<p class='bad'>Import problem: {e}</p>"
+    body = f"""
+    <div class="card">
+      <h2>Import Clients</h2>
+      {msg}
+      <form method="post" enctype="multipart/form-data">
+        <label>Upload clients/backup JSON</label>
+        <input type="file" name="clients_file" accept=".json">
+        <label>OSE paste JSON</label>
+        <textarea name="clients_json" rows="16" placeholder="{{...}}"></textarea>
+        <button>Import Clients</button>
+      </form>
+    </div>
+    """
+    return admin_page(body)
+
+
 @app.route("/backup")
 def backup_all():
     if not login_required():
         return redirect("/login")
     data = {
-        "version": "v4.5",
+        "version": "v4.6",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
@@ -1087,7 +1128,7 @@ def watch_home():
     data_json = json.dumps(safe_items, ensure_ascii=False)
     body = f"""
     <div class="top">
-      <h2>{c.get('name')} - Nox IPTV VLC Portal</h2>
+      <h2>{c.get('name')} - Nox IPTV Player</h2>
       <div class="bar">
         <input id="search" placeholder="Kërko kanal...">
         <select id="group">
@@ -1099,30 +1140,110 @@ def watch_home():
     </div>
     <div class="wrap">
       <div class="player">
-        <div class="now" id="now">Zgjedh një kanal. Klikimi hap VLC direkt.</div>
-        <p><a class="btn" id="openVlc" href="#">Open selected in VLC</a>
-        <button class="btn gray" onclick="copyUrl()">Copy URL</button></p>
-        <p class="hint" id="hint">Nëse telefoni pyet me cilin app ta hapë, zgjidh VLC.</p>
+        <video id="video" controls playsinline webkit-playsinline></video>
+        <div class="now" id="now">Zgjedh një kanal. Transmetimi hapet këtu në ekran.</div>
+        <p>
+          <button class="btn" onclick="retryCurrent()">Retry</button>
+          <a class="btn gray" id="openVlc" href="#">Open in VLC</a>
+          <button class="btn gray" onclick="copyUrl()">Copy URL</button>
+        </p>
+        <p class="hint" id="hint">Kliko kanal. Për PC/Android përdoret player direkt në browser. VLC është vetëm rezervë.</p>
       </div>
       <div class="grid" id="channels"></div>
     </div>
     <script>
       const channels = {data_json};
       let currentUrl = "";
+      let currentChannel = null;
 
       function playChannel(ch) {{
+        currentChannel = ch;
         currentUrl = ch.url;
         document.getElementById("now").innerText = ch.name + " — " + ch.group;
-        const vlcUrl = "vlc://" + ch.url;
-        const openBtn = document.getElementById("openVlc");
-        if (openBtn) {{
-          openBtn.href = vlcUrl;
+        document.getElementById("openVlc").href = "vlc://" + ch.url;
+        startPlayer(ch);
+      }}
+
+      function startPlayer(ch) {{
+        const video = document.getElementById("video");
+        const hint = document.getElementById("hint");
+        const proxyUrl = "/watch/stream/" + ch.i;
+
+        if (window.hls) {{
+          try {{ window.hls.destroy(); }} catch(e) {{}}
+          window.hls = null;
         }}
-        window.location.href = vlcUrl;
-        setTimeout(function() {{
-          document.getElementById("hint").innerText =
-            "Nëse VLC nuk u hap automatikisht, përdor butonin Open selected in VLC ose Copy URL.";
-        }}, 1200);
+        if (window.tsPlayer) {{
+          try {{ window.tsPlayer.destroy(); }} catch(e) {{}}
+          window.tsPlayer = null;
+        }}
+
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+
+        const lower = ch.url.toLowerCase();
+
+        video.onerror = function() {{
+          hint.innerText = "Browseri nuk e hapi këtë kanal. Provo Retry ose Open in VLC.";
+        }};
+
+        if (lower.includes(".m3u8")) {{
+          if (Hls.isSupported()) {{
+            window.hls = new Hls({{
+              lowLatencyMode: true,
+              liveSyncDurationCount: 3,
+              maxBufferLength: 20,
+              enableWorker: true
+            }});
+            window.hls.loadSource(ch.url);
+            window.hls.attachMedia(video);
+            window.hls.on(Hls.Events.MANIFEST_PARSED, function() {{
+              video.play().catch(() => {{}});
+            }});
+            window.hls.on(Hls.Events.ERROR, function(event, data) {{
+              if (data.fatal) {{
+                hint.innerText = "HLS nuk u hap direkt. Provo Open in VLC.";
+              }}
+            }});
+            hint.innerText = "HLS/M3U8 player aktiv...";
+          }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
+            video.src = ch.url;
+            video.play().catch(() => {{}});
+            hint.innerText = "Native HLS player aktiv...";
+          }} else {{
+            hint.innerText = "Ky browser nuk suporton HLS.";
+          }}
+        }} else {{
+          if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
+            try {{
+              window.tsPlayer = mpegts.createPlayer({{
+                type: "mpegts",
+                isLive: true,
+                url: proxyUrl,
+                cors: false,
+                enableStashBuffer: false,
+                stashInitialSize: 128
+              }});
+              window.tsPlayer.attachMediaElement(video);
+              window.tsPlayer.load();
+              window.tsPlayer.play();
+              hint.innerText = "MPEG-TS proxy player aktiv në browser...";
+            }} catch(e) {{
+              hint.innerText = "MPEG-TS player nuk u hap. Provo Open in VLC.";
+            }}
+          }} else {{
+            video.src = proxyUrl;
+            video.play().catch(() => {{
+              hint.innerText = "Browseri nuk e suporton këtë format. Provo Open in VLC.";
+            }});
+            hint.innerText = "Direct proxy playback...";
+          }}
+        }}
+      }}
+
+      function retryCurrent() {{
+        if (currentChannel) startPlayer(currentChannel);
       }}
 
       function copyUrl() {{
@@ -1163,6 +1284,62 @@ def watch_home():
     </script>
     """
     return client_page(body)
+
+
+
+
+# ---------------- Browser Stream Proxy for Client Portal ----------------
+
+@app.route("/watch/stream/<int:channel_id>")
+def watch_stream_proxy(channel_id):
+    if not client_login_required():
+        return Response("Not logged in", status=401)
+
+    slug = session["client_slug"]
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("Channel not found", status=404)
+
+        stream_url = items[channel_id]["url"]
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
+            "Accept": "*/*",
+            "Connection": "keep-alive",
+        }
+
+        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(10, None), allow_redirects=True)
+        content_type = upstream.headers.get("Content-Type") or "video/mp2t"
+        low = content_type.lower()
+        if "mpeg" not in low and "video" not in low and "octet" not in low:
+            content_type = "video/mp2t"
+
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    upstream.close()
+                except Exception:
+                    pass
+
+        return Response(
+            generate(),
+            mimetype=content_type,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Access-Control-Allow-Origin": "*",
+                "X-Accel-Buffering": "no",
+            },
+            direct_passthrough=True,
+        )
+    except Exception as e:
+        return Response(f"Stream proxy error: {e}", status=500)
 
 
 # ---------------- Native Android App API ----------------
@@ -1233,7 +1410,7 @@ def health():
     return {
         "ok": True,
         "service": "noxiptv",
-        "version": "v4.5",
+        "version": "v4.6",
         "time": datetime.now().isoformat(),
         "clients": len(load_clients()),
         "template_channels": get_template_text().count("#EXTINF"),
