@@ -13,6 +13,7 @@ import os
 import re
 import socket
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -28,6 +29,10 @@ CACHE_DIR.mkdir(exist_ok=True)
 
 CLIENTS_FILE = DATA_DIR / "clients.json"
 TEMPLATE_FILE = DATA_DIR / "master_template.m3u"
+LOGS_FILE = DATA_DIR / "logs.jsonl"
+SETTINGS_FILE = DATA_DIR / "settings.json"
+DEVICE_FILE = DATA_DIR / "devices.json"
+CHANNEL_STATS_FILE = DATA_DIR / "channel_stats.json"
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
@@ -383,6 +388,117 @@ def client_login_required():
     return bool(session.get("client_slug"))
 
 
+
+
+# ---------------- V5.1 FULL helpers ----------------
+
+def load_json_file(path, default):
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return default
+    return default
+
+
+def save_json_file(path, data):
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def get_settings():
+    default = {
+        "brand_name": "Nox IPTV",
+        "brand_color": "#2563eb",
+        "accent_color": "#16a34a",
+        "dark_mode": True,
+        "smart_engine": True,
+        "auto_fallback": True,
+        "proxy_first": False,
+        "vlc_auto_fallback": True,
+        "fast_zapping": True,
+        "pwa": True,
+        "custom_categories": {
+            "Shqip": ["AL|", "ALBANIA", "KOSOVA", "KOSOVO", "SHQIP"],
+            "Sport": ["SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA", "EUROSPORT"],
+            "Gjermani": ["DE|", "GERMANY", "DEUTSCHLAND", "ZDF", "RTL", "SAT"]
+        }
+    }
+    s = load_json_file(SETTINGS_FILE, default)
+    for k, v in default.items():
+        s.setdefault(k, v)
+    return s
+
+
+def save_settings(data):
+    save_json_file(SETTINGS_FILE, data)
+
+
+def log_event(event_type, client_slug="", channel="", status="", extra=None):
+    try:
+        row = {
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "event": event_type,
+            "client": client_slug,
+            "channel": channel,
+            "status": status,
+            "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ua": request.headers.get("User-Agent", ""),
+            "extra": extra or {}
+        }
+        with LOGS_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def read_logs(limit=500):
+    if not LOGS_FILE.exists():
+        return []
+    rows = []
+    for line in LOGS_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()[-limit:]:
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            pass
+    return list(reversed(rows))
+
+
+def increment_channel_stat(slug, channel_name):
+    stats = load_json_file(CHANNEL_STATS_FILE, {})
+    key = f"{slug}::{channel_name}"
+    stats[key] = stats.get(key, 0) + 1
+    save_json_file(CHANNEL_STATS_FILE, stats)
+
+
+def get_device_id():
+    return request.cookies.get("nox_device_id") or str(uuid.uuid4())
+
+
+def device_allowed(slug, client):
+    max_devices = int(client.get("max_devices", 2) or 2)
+    devices = load_json_file(DEVICE_FILE, {})
+    used = devices.get(slug, {})
+    did = get_device_id()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if did not in used and len(used) >= max_devices:
+        return False, did, len(used), max_devices
+    used[did] = {"last_seen": now, "ua": request.headers.get("User-Agent", "")[:180]}
+    devices[slug] = used
+    save_json_file(DEVICE_FILE, devices)
+    return True, did, len(used), max_devices
+
+
+def detect_device_type():
+    ua = (request.headers.get("User-Agent", "") or "").lower()
+    if "android" in ua:
+        return "android"
+    if "iphone" in ua or "ipad" in ua:
+        return "ios"
+    if "windows" in ua or "macintosh" in ua:
+        return "pc"
+    return "unknown"
+
+
 # ---------------- Layouts ----------------
 
 ADMIN_HTML = """
@@ -432,6 +548,9 @@ ADMIN_HTML = """
         <a class="btn" href="/template">Master Template</a>
         <a class="btn green" href="/add">Add Client</a>
         <a class="btn gray" href="/status">Status</a>
+        <a class="btn gray" href="/logs">Logs</a>
+        <a class="btn gray" href="/analytics">Analytics</a>
+        <a class="btn gray" href="/settings">Branding/Settings</a>
         <a class="btn gray" href="/bulk-refresh">Bulk Refresh</a>
         <a class="btn gray" href="/clear-cache">Clear Cache</a>
         <a class="btn dark" href="/backup">Backup All</a>
@@ -461,6 +580,7 @@ CLIENT_HTML = """
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="/manifest.json">
   <style>
     body { margin:0; font-family:Arial,sans-serif; background:#0b1220; color:#e5e7eb; }
     .top { background:#111827; padding:14px; position:sticky; top:0; z-index:10; }
@@ -567,6 +687,7 @@ def dashboard():
             <a class="btn green" href="/refresh/{slug}">Refresh</a>
             <a class="btn" href="/edit/{slug}">Edit</a>
             <a class="btn gray" href="/duplicate/{slug}">Duplicate</a>
+            <a class="btn gray" href="/toggle/{slug}">Enable/Disable</a>
             <a class="btn dark" href="/download/{slug}">Download</a>
             <a class="btn gray" href="/p/{slug}.m3u">Open</a>
             <a class="btn red" href="/delete/{slug}" onclick="return confirm('Delete?')">Delete</a>
@@ -657,6 +778,8 @@ def add_edit(slug=None):
             "allow_watch": request.form.get("allow_watch") == "on",
             "client_note": request.form.get("client_note", "").strip(),
             "favorite": request.form.get("favorite") == "on",
+            "enabled": request.form.get("enabled") == "on",
+            "max_devices": int(request.form.get("max_devices", "2") or 2),
             "created": client.get("created") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "last_update": client.get("last_update"),
             "last_channels": client.get("last_channels"),
@@ -701,7 +824,10 @@ def add_edit(slug=None):
         <input name="portal_password" value="{client.get('portal_password','1234')}" placeholder="p.sh. 1234">
 
         <label><input style="width:auto" type="checkbox" name="allow_watch" {"checked" if client.get("allow_watch", True) else ""}> Allow client portal / direct VLC</label><br>
-        <label><input style="width:auto" type="checkbox" name="favorite" {"checked" if client.get("favorite", False) else ""}> Mark as favourite</label><br><br>
+        <label><input style="width:auto" type="checkbox" name="favorite" {"checked" if client.get("favorite", False) else ""}> Mark as favourite</label><br>
+        <label><input style="width:auto" type="checkbox" name="enabled" {"checked" if client.get("enabled", True) else ""}> Client enabled</label><br>
+        <label>Device limit</label>
+        <input name="max_devices" type="number" min="1" max="10" value="{client.get('max_devices',2)}"><br>
 
         <label>Private note for this client</label>
         <input name="client_note" value="{client.get('client_note','')}" placeholder="p.sh. Gjermani, Samsung TV, skadon...">
@@ -866,6 +992,20 @@ def duplicate_client(slug):
     save_clients(clients)
     return redirect(f"/edit/{new_slug}")
 
+
+
+@app.route("/toggle/<slug>")
+def toggle_client(slug):
+    if not login_required():
+        return redirect("/login")
+    clients = load_clients()
+    c = clients.get(slug)
+    if not c:
+        abort(404)
+    c["enabled"] = not c.get("enabled", True)
+    clients[slug] = c
+    save_clients(clients)
+    return redirect("/")
 
 @app.route("/status")
 def status_page():
@@ -1063,11 +1203,21 @@ def watch_login():
         p = request.form.get("password", "").strip()
         clients = load_clients()
         for slug, c in clients.items():
-            if not c.get("allow_watch", True):
+            if not c.get("allow_watch", True) or not c.get("enabled", True):
                 continue
             if c.get("portal_user") == u and c.get("portal_password") == p:
+                ok, did, used, maxd = device_allowed(slug, c)
+                if not ok:
+                    log_event("login_blocked_device_limit", slug, status="blocked", extra={"used": used, "max": maxd})
+                    return client_page(f"""
+                    <div class="top"><h2>Nox IPTV</h2></div>
+                    <div class="wrap"><div class="player"><p style="color:#fca5a5">Device limit arritur: {used}/{maxd}</p><a class="btn" href="/watch">Kthehu</a></div></div>
+                    """)
                 session["client_slug"] = slug
-                return redirect("/watch/home")
+                log_event("login", slug, status="ok", extra={"device": did, "device_type": detect_device_type()})
+                resp = redirect("/watch/home")
+                resp.set_cookie("nox_device_id", did, max_age=60*60*24*365)
+                return resp
         return client_page("""
         <div class="top"><h2>Nox IPTV VLC Portal</h2></div>
         <div class="wrap"><div class="player"><p style="color:#fca5a5">Login gabim.</p><a class="btn" href="/watch">Provo prapë</a></div></div>
@@ -1102,7 +1252,7 @@ def watch_home():
     slug = session["client_slug"]
     clients = load_clients()
     c = clients.get(slug)
-    if not c or not c.get("allow_watch", True):
+    if not c or not c.get("allow_watch", True) or not c.get("enabled", True):
         return redirect("/watch/logout")
 
     try:
@@ -1110,7 +1260,7 @@ def watch_home():
         items = parse_m3u_items(text)
     except Exception as e:
         return client_page(f"""
-        <div class="top"><h2>Nox IPTV VLC Portal</h2></div>
+        <div class="top"><h2>Nox IPTV Player</h2></div>
         <div class="wrap"><div class="player"><p>Problem: {e}</p></div></div>
         """)
 
@@ -1125,88 +1275,129 @@ def watch_home():
             "url": it["url"],
         })
 
+    settings = get_settings()
     data_json = json.dumps(safe_items, ensure_ascii=False)
+    settings_json = json.dumps(settings, ensure_ascii=False)
+    brand = settings.get("brand_name", "Nox IPTV")
+
     body = f"""
+    <style>
+      .layout {{ display:grid; grid-template-columns:230px 1fr; gap:12px; }}
+      .side {{ background:#111827; border-radius:16px; padding:12px; height:fit-content; position:sticky; top:92px; }}
+      .cat {{ display:block; width:100%; text-align:left; margin:6px 0; background:#1f2937; }}
+      .cat.active {{ background:{settings.get('brand_color','#2563eb')}; }}
+      @media(max-width:800px) {{ .layout {{ grid-template-columns:1fr; }} .side {{ position:relative; top:0; }} }}
+    </style>
     <div class="top">
-      <h2>{c.get('name')} - Nox IPTV Player</h2>
+      <h2>{brand} - {c.get('name')}</h2>
       <div class="bar">
         <input id="search" placeholder="Kërko kanal...">
         <select id="group">
           <option value="">Të gjitha kategoritë</option>
+          <option value="__fav">⭐ Favorites</option>
+          <option value="__recent">🕘 Recently watched</option>
+          <option value="Shqip">Shqip</option>
+          <option value="Sport">Sport</option>
+          <option value="Gjermani">Gjermani</option>
           {''.join(f'<option value="{g}">{g}</option>' for g in groups)}
         </select>
         <a class="btn red" href="/watch/logout">Logout</a>
       </div>
     </div>
-    <div class="wrap">
-      <div class="player">
-        <video id="video" controls playsinline webkit-playsinline></video>
-        <div class="now" id="now">Zgjedh një kanal. Transmetimi hapet këtu në ekran.</div>
-        <p>
-          <button class="btn" onclick="retryCurrent()">Retry</button>
-          <button class="btn gray" onclick="stopPlayer()">Stop</button>
-          <a class="btn gray" id="openVlcAndroid" href="#">Open VLC Android</a>
-          <a class="btn gray" id="openVlcClassic" href="#">Open VLC Classic</a>
-          <a class="btn gray" id="openDirect" href="#" target="_blank">Open Direct</a>
-          <button class="btn gray" onclick="copyUrl()">Copy URL</button>
-          <button class="btn gray" onclick="testChannel()">Test</button>
-        </p>
-        <p class="hint" id="hint">Kliko kanal. Nëse browseri vonon, përdor Retry. Për telefon Android përdor Open VLC Android.</p>
+    <div class="wrap layout">
+      <div class="side">
+        <button class="btn cat active" onclick="setGroup('')">Të gjitha</button>
+        <button class="btn cat" onclick="setGroup('__fav')">⭐ Favorites</button>
+        <button class="btn cat" onclick="setGroup('__recent')">🕘 Recent</button>
+        <button class="btn cat" onclick="setGroup('Shqip')">Shqip</button>
+        <button class="btn cat" onclick="setGroup('Sport')">Sport</button>
+        <button class="btn cat" onclick="setGroup('Gjermani')">Gjermani</button>
       </div>
-      <div class="grid" id="channels"></div>
+      <div>
+        <div class="player">
+          <video id="video" controls playsinline webkit-playsinline preload="none"></video>
+          <div class="now" id="now">Zgjedh një kanal.</div>
+          <p>
+            <button class="btn" onclick="retryCurrent()">Retry</button>
+            <button class="btn gray" onclick="stopPlayer()">Stop</button>
+            <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
+            <a class="btn gray" id="openVlcAndroid" href="#">Open VLC Android</a>
+            <a class="btn gray" id="openVlcClassic" href="#">Open VLC Classic</a>
+            <a class="btn gray" id="openDirect" href="#" target="_blank">Open Direct</a>
+          </p>
+          <p class="hint" id="hint">Smart engine aktiv: browser → proxy → direct/VLC fallback.</p>
+        </div>
+        <div class="grid" id="channels"></div>
+      </div>
     </div>
+
     <script>
       const channels = {data_json};
+      const settings = {settings_json};
       let currentUrl = "";
       let currentChannel = null;
       let playToken = 0;
+      const favKey = "nox_favorites_{slug}";
+      const recentKey = "nox_recent_{slug}";
+
+      function getFavs() {{ return JSON.parse(localStorage.getItem(favKey) || "[]"); }}
+      function setFavs(v) {{ localStorage.setItem(favKey, JSON.stringify(v)); }}
+      function getRecent() {{ return JSON.parse(localStorage.getItem(recentKey) || "[]"); }}
+      function setRecent(v) {{ localStorage.setItem(recentKey, JSON.stringify(v.slice(0, 30))); }}
+
+      function customCategory(ch) {{
+        const text = ((ch.name || "") + " " + (ch.group || "")).toUpperCase();
+        const cats = settings.custom_categories || {{}};
+        for (const cat in cats) {{
+          for (const key of cats[cat]) {{
+            if (text.includes(String(key).toUpperCase())) return cat;
+          }}
+        }}
+        return ch.group;
+      }}
+
+      function setGroup(g) {{
+        document.getElementById("group").value = g;
+        document.querySelectorAll(".cat").forEach(x => x.classList.remove("active"));
+        render();
+      }}
+
+      function updateExternalLinks(url) {{
+        const clean = url.replace(/^https?:\\/\\//, "");
+        const androidIntent = "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
+        document.getElementById("openVlcAndroid").href = androidIntent;
+        document.getElementById("openVlcClassic").href = "vlc://" + url;
+        document.getElementById("openDirect").href = url;
+      }}
+
+      function markRecent(ch) {{
+        let rec = getRecent().filter(x => x !== ch.i);
+        rec.unshift(ch.i);
+        setRecent(rec);
+      }}
+
+      function toggleFavorite() {{
+        if (!currentChannel) return;
+        let favs = getFavs();
+        if (favs.includes(currentChannel.i)) favs = favs.filter(x => x !== currentChannel.i);
+        else favs.push(currentChannel.i);
+        setFavs(favs);
+        render();
+      }}
 
       function playChannel(ch) {{
         currentChannel = ch;
         currentUrl = ch.url;
-        document.getElementById("now").innerText = ch.name + " — " + ch.group;
+        markRecent(ch);
         updateExternalLinks(ch.url);
+        try {{ navigator.sendBeacon("/watch/log", JSON.stringify({{channel: ch.name, id: ch.i, event: "channel_click"}})); }} catch(e) {{}}
+        document.getElementById("now").innerText = ch.name + " — " + ch.group;
         startPlayer(ch);
-      }}
-
-      function updateExternalLinks(url) {{
-        const clean = url.replace(/^https?:\/\//, "");
-        const androidIntent = "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
-        const vlcClassic = "vlc://" + url;
-        const a1 = document.getElementById("openVlcAndroid");
-        const a2 = document.getElementById("openVlcClassic");
-        const a3 = document.getElementById("openDirect");
-        if (a1) a1.href = androidIntent;
-        if (a2) a2.href = vlcClassic;
-        if (a3) a3.href = url;
-      }}
-
-      async function testChannel() {{
-        if (!currentChannel) {{
-          alert("Zgjedh një kanal së pari.");
-          return;
-        }}
-        const hint = document.getElementById("hint");
-        hint.innerText = "Duke testuar kanalin...";
-        try {{
-          const res = await fetch("/watch/test/" + currentChannel.i + "?t=" + Date.now());
-          const data = await res.json();
-          if (data.ok) {{
-            hint.innerText = "TEST OK: HTTP " + data.status_code + " | " + data.content_type + " | " + data.bytes + " bytes";
-          }} else {{
-            hint.innerText = "TEST PROBLEM: " + (data.error || ("HTTP " + data.status_code));
-          }}
-        }} catch(e) {{
-          hint.innerText = "TEST ERROR: " + e;
-        }}
       }}
 
       function stopPlayer() {{
         const video = document.getElementById("video");
-        if (window.hls) {{
-          try {{ window.hls.destroy(); }} catch(e) {{}}
-          window.hls = null;
-        }}
+        if (window.hls) {{ try {{ window.hls.destroy(); }} catch(e) {{}} window.hls = null; }}
         if (window.tsPlayer) {{
           try {{ window.tsPlayer.pause(); }} catch(e) {{}}
           try {{ window.tsPlayer.unload(); }} catch(e) {{}}
@@ -1225,120 +1416,85 @@ def watch_home():
         const video = document.getElementById("video");
         const hint = document.getElementById("hint");
         const proxyUrl = "/watch/stream/" + ch.i + "?t=" + Date.now();
-
         stopPlayer();
-
         const lower = ch.url.toLowerCase();
-        hint.innerText = "Duke u lidhur me kanalin...";
+        hint.innerText = "Duke u lidhur...";
 
-        video.onwaiting = function() {{
-          if (token === playToken) hint.innerText = "Duke ngarkuar stream... prit pak.";
-        }};
-        video.onplaying = function() {{
-          if (token === playToken) hint.innerText = "Live tani.";
-        }};
-        video.onerror = function() {{
-          if (token === playToken) hint.innerText = "Nuk u hap në browser. Provo Retry ose Open VLC Android/Classic.";
-        }};
+        video.onplaying = () => {{ if (token === playToken) hint.innerText = "Live tani."; }};
+        video.onwaiting = () => {{ if (token === playToken) hint.innerText = "Duke ngarkuar..."; }};
+        video.onerror = () => {{ if (token === playToken) tryProxy(ch, token); }};
 
-        if (lower.includes(".m3u8")) {{
-          if (Hls.isSupported()) {{
-            window.hls = new Hls({{
-              lowLatencyMode: true,
-              liveSyncDurationCount: 2,
-              maxBufferLength: 12,
-              maxMaxBufferLength: 20,
-              backBufferLength: 10,
-              enableWorker: true,
-              manifestLoadingTimeOut: 8000,
-              levelLoadingTimeOut: 8000,
-              fragLoadingTimeOut: 10000
-            }});
-            window.hls.loadSource(ch.url);
-            window.hls.attachMedia(video);
-            window.hls.on(Hls.Events.MANIFEST_PARSED, function() {{
-              if (token === playToken) video.play().catch(() => {{}});
-            }});
-            window.hls.on(Hls.Events.ERROR, function(event, data) {{
-              if (data.fatal && token === playToken) {{
-                hint.innerText = "HLS nuk u hap direkt. Duke provuar proxy...";
-                playMpegTsProxy(proxyUrl, token);
-              }}
-            }});
-          }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
-            video.src = ch.url;
-            video.play().catch(() => {{}});
-          }} else {{
-            playMpegTsProxy(proxyUrl, token);
-          }}
+        if (lower.includes(".m3u8") && Hls.isSupported()) {{
+          window.hls = new Hls({{lowLatencyMode:true, liveSyncDurationCount:2, maxBufferLength:12, enableWorker:true}});
+          window.hls.loadSource(ch.url);
+          window.hls.attachMedia(video);
+          window.hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => tryProxy(ch, token)));
+          window.hls.on(Hls.Events.ERROR, (event, data) => {{ if (data.fatal) tryProxy(ch, token); }});
+        }} else if (lower.includes(".m3u8") && video.canPlayType("application/vnd.apple.mpegurl")) {{
+          video.src = ch.url;
+          video.play().catch(() => tryProxy(ch, token));
         }} else {{
-          playMpegTsProxy(proxyUrl, token);
+          tryProxy(ch, token);
         }}
       }}
 
-      function playMpegTsProxy(proxyUrl, token) {{
+      function tryProxy(ch, token) {{
         const video = document.getElementById("video");
         const hint = document.getElementById("hint");
-
+        const proxyUrl = "/watch/stream/" + ch.i + "?t=" + Date.now();
+        hint.innerText = "Duke provuar proxy...";
         if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
           try {{
-            window.tsPlayer = mpegts.createPlayer({{
-              type: "mpegts",
-              isLive: true,
-              url: proxyUrl,
-              cors: false,
-              enableStashBuffer: false,
-              stashInitialSize: 64,
-              lazyLoad: false,
-              autoCleanupSourceBuffer: true
-            }});
+            window.tsPlayer = mpegts.createPlayer({{type:"mpegts", isLive:true, url:proxyUrl, cors:false, enableStashBuffer:false, stashInitialSize:64}});
             window.tsPlayer.attachMediaElement(video);
             window.tsPlayer.load();
             window.tsPlayer.play();
-            if (token === playToken) hint.innerText = "Duke hapur MPEG-TS në browser...";
           }} catch(e) {{
-            if (token === playToken) hint.innerText = "MPEG-TS nuk u hap. Provo Open VLC Android/Classic.";
+            tryDirect(ch, token);
           }}
         }} else {{
           video.src = proxyUrl;
-          video.play().catch(() => {{
-            if (token === playToken) hint.innerText = "Browseri nuk e suporton këtë format. Provo Open VLC Android/Classic.";
-          }});
+          video.play().catch(() => tryDirect(ch, token));
         }}
       }}
 
-      function retryCurrent() {{
-        if (currentChannel) startPlayer(currentChannel);
-      }}
-
-      function copyUrl() {{
-        if (!currentUrl) {{
-          alert("Zgjedh një kanal së pari.");
-          return;
-        }}
-        navigator.clipboard.writeText(currentUrl).then(function() {{
-          alert("URL u kopjua.");
-        }}).catch(function() {{
-          alert("Nuk u kopjua automatikisht.");
+      function tryDirect(ch, token) {{
+        const video = document.getElementById("video");
+        const hint = document.getElementById("hint");
+        hint.innerText = "Duke provuar direct...";
+        video.src = ch.url;
+        video.play().catch(() => {{
+          hint.innerText = "Browser nuk e hapi. Përdor VLC Android/Classic.";
+          const ua = navigator.userAgent.toLowerCase();
+          if (settings.vlc_auto_fallback && ua.includes("android")) {{
+            setTimeout(() => {{ window.location.href = document.getElementById("openVlcAndroid").href; }}, 800);
+          }}
         }});
       }}
+
+      function retryCurrent() {{ if (currentChannel) startPlayer(currentChannel); }}
 
       function render() {{
         const q = document.getElementById("search").value.toLowerCase();
         const g = document.getElementById("group").value;
+        const favs = getFavs();
+        const rec = getRecent();
         const box = document.getElementById("channels");
         box.innerHTML = "";
         channels.filter(ch => {{
-          return (!q || ch.name.toLowerCase().includes(q)) && (!g || ch.group === g);
+          let okGroup = true;
+          if (g === "__fav") okGroup = favs.includes(ch.i);
+          else if (g === "__recent") okGroup = rec.includes(ch.i);
+          else if (g === "Shqip" || g === "Sport" || g === "Gjermani") okGroup = customCategory(ch) === g;
+          else okGroup = (!g || ch.group === g);
+          return (!q || ch.name.toLowerCase().includes(q)) && okGroup;
         }}).slice(0, 800).forEach(ch => {{
           const div = document.createElement("div");
           div.className = "ch";
           div.onclick = () => playChannel(ch);
-          div.innerHTML = `
-            ${{ch.logo ? `<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">` : ""}}
-            <div class="name">${{ch.name}}</div>
-            <div class="group">${{ch.group}}</div>
-          `;
+          div.innerHTML = `${{ch.logo ? `<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">` : ""}}
+            <div class="name">${{favs.includes(ch.i) ? "⭐ " : ""}}${{ch.name}}</div>
+            <div class="group">${{customCategory(ch)}} · ${{ch.group}}</div>`;
           box.appendChild(div);
         }});
       }}
@@ -1351,128 +1507,17 @@ def watch_home():
     return client_page(body)
 
 
-
-
-
-
-# ---------------- Channel Test / Link Debug ----------------
-
-@app.route("/watch/test/<int:channel_id>")
-def watch_test_channel(channel_id):
+@app.route("/watch/log", methods=["POST"])
+def watch_log_event():
     if not client_login_required():
-        return {"ok": False, "error": "Not logged in"}, 401
-
-    slug = session["client_slug"]
-    try:
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return {"ok": False, "error": "Channel not found"}, 404
-
-        stream_url = items[channel_id]["url"]
-        headers = {
-            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
-            "Accept": "*/*",
-            "Accept-Encoding": "identity",
-            "Range": "bytes=0-65535",
-            "Connection": "close",
-        }
-        r = requests.get(stream_url, headers=headers, stream=True, timeout=(6, 12), allow_redirects=True)
-        total = 0
-        for chunk in r.iter_content(chunk_size=16384):
-            if chunk:
-                total += len(chunk)
-            if total >= 32768:
-                break
-        try:
-            r.close()
-        except Exception:
-            pass
-
-        return {
-            "ok": 200 <= r.status_code < 400 and total > 0,
-            "status_code": r.status_code,
-            "content_type": r.headers.get("Content-Type", "unknown"),
-            "bytes": total,
-            "url_type": "m3u8" if ".m3u8" in stream_url.lower() else "ts/mpegts",
-        }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}, 500
-
-
-@app.route("/watch/links/<int:channel_id>")
-def watch_links(channel_id):
-    if not client_login_required():
-        return {"ok": False, "error": "Not logged in"}, 401
-    slug = session["client_slug"]
-    text = get_playlist_for_client(slug, force_refresh=False)
-    items = parse_m3u_items(text)
-    if channel_id < 0 or channel_id >= len(items):
-        return {"ok": False, "error": "Channel not found"}, 404
-    u = items[channel_id]["url"]
-    clean = re.sub(r"^https?://", "", u)
-    return {
-        "ok": True,
-        "direct": u,
-        "vlc_classic": "vlc://" + u,
-        "android_intent": "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end",
-        "proxy": url_for("watch_stream_proxy", channel_id=channel_id, _external=True),
-    }
-
-
-# ---------------- Browser Stream Proxy for Client Portal ----------------
-
-@app.route("/watch/stream/<int:channel_id>")
-def watch_stream_proxy(channel_id):
-    if not client_login_required():
-        return Response("Not logged in", status=401)
-
-    slug = session["client_slug"]
-    try:
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("Channel not found", status=404)
-
-        stream_url = items[channel_id]["url"]
-        headers = {
-            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
-            "Accept": "*/*",
-            "Connection": "keep-alive",
-            "Accept-Encoding": "identity",
-        }
-
-        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(6, 20), allow_redirects=True)
-        content_type = upstream.headers.get("Content-Type") or "video/mp2t"
-        low = content_type.lower()
-        if "mpeg" not in low and "video" not in low and "octet" not in low:
-            content_type = "video/mp2t"
-
-        def generate():
-            try:
-                for chunk in upstream.iter_content(chunk_size=16 * 1024):
-                    if chunk:
-                        yield chunk
-            finally:
-                try:
-                    upstream.close()
-                except Exception:
-                    pass
-
-        return Response(
-            generate(),
-            mimetype=content_type,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-                "Access-Control-Allow-Origin": "*",
-                "X-Accel-Buffering": "no",
-            },
-            direct_passthrough=True,
-        )
-    except Exception as e:
-        return Response(f"Stream proxy error: {e}", status=500)
+        return {"ok": False}, 401
+    slug = session.get("client_slug", "")
+    data = request.get_json(silent=True) or {}
+    ch = data.get("channel", "")
+    ev = data.get("event", "event")
+    increment_channel_stat(slug, ch)
+    log_event(ev, slug, ch, status="client")
+    return {"ok": True}
 
 
 # ---------------- Native Android App API ----------------
@@ -1546,6 +1591,69 @@ def warm():
         "message": "warm",
         "time": datetime.now().isoformat(),
     }
+
+
+@app.route("/logs")
+def logs_page():
+    if not login_required():
+        return redirect("/login")
+    logs = read_logs(500)
+    rows = "".join(f"<tr><td>{x.get('time')}</td><td>{x.get('client')}</td><td>{x.get('event')}</td><td>{x.get('channel')}</td><td>{x.get('status')}</td><td>{x.get('ip')}</td><td class='small'>{x.get('ua','')[:80]}</td></tr>" for x in logs)
+    return admin_page(f"<div class='card'><h2>Admin Logs</h2><table><tr><th>Time</th><th>Client</th><th>Event</th><th>Channel</th><th>Status</th><th>IP</th><th>Device</th></tr>{rows}</table></div>")
+
+
+@app.route("/analytics")
+def analytics_page():
+    if not login_required():
+        return redirect("/login")
+    stats = load_json_file(CHANNEL_STATS_FILE, {})
+    top = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:100]
+    rows = ""
+    for key, count in top:
+        client, channel = key.split("::", 1) if "::" in key else ("", key)
+        rows += f"<tr><td>{client}</td><td>{channel}</td><td>{count}</td></tr>"
+    return admin_page(f"<div class='card'><h2>Analytics</h2><table><tr><th>Client</th><th>Channel</th><th>Views</th></tr>{rows}</table></div>")
+
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings_page():
+    if not login_required():
+        return redirect("/login")
+    s = get_settings()
+    msg = ""
+    if request.method == "POST":
+        s["brand_name"] = request.form.get("brand_name", "Nox IPTV")
+        s["brand_color"] = request.form.get("brand_color", "#2563eb")
+        s["accent_color"] = request.form.get("accent_color", "#16a34a")
+        s["smart_engine"] = request.form.get("smart_engine") == "on"
+        s["auto_fallback"] = request.form.get("auto_fallback") == "on"
+        s["vlc_auto_fallback"] = request.form.get("vlc_auto_fallback") == "on"
+        save_settings(s)
+        msg = "<p class='ok'>Settings u ruajtën.</p>"
+    body = f"""
+    <div class="card"><h2>Branding / Smart Engine Settings</h2>{msg}
+      <form method="post">
+        <label>Brand name</label><input name="brand_name" value="{s.get('brand_name','Nox IPTV')}">
+        <label>Brand color</label><input name="brand_color" value="{s.get('brand_color','#2563eb')}">
+        <label>Accent color</label><input name="accent_color" value="{s.get('accent_color','#16a34a')}">
+        <label><input style="width:auto" type="checkbox" name="smart_engine" {'checked' if s.get('smart_engine') else ''}> Smart stream engine</label><br>
+        <label><input style="width:auto" type="checkbox" name="auto_fallback" {'checked' if s.get('auto_fallback') else ''}> Auto fallback</label><br>
+        <label><input style="width:auto" type="checkbox" name="vlc_auto_fallback" {'checked' if s.get('vlc_auto_fallback') else ''}> Auto VLC fallback on Android</label><br><br>
+        <button>Save Settings</button>
+      </form>
+    </div>"""
+    return admin_page(body)
+
+
+@app.route("/manifest.json")
+def pwa_manifest():
+    s = get_settings()
+    return {"name": s.get("brand_name","Nox IPTV"), "short_name": s.get("brand_name","Nox IPTV"), "start_url": "/watch", "display": "standalone", "background_color": "#0b1220", "theme_color": s.get("brand_color","#2563eb"), "icons": []}
+
+
+@app.route("/sw.js")
+def service_worker():
+    return Response("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());", mimetype="application/javascript")
 
 @app.route("/health")
 def health():
