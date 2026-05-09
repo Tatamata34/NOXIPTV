@@ -1,17 +1,21 @@
-# Nox IPTV Cloud Panel V4.7
+# Nox IPTV Cloud Panel V5.0
 
-Optimized /watch:
-- gevent async gunicorn worker
-- faster stream connect timeout
-- smaller chunks for faster first video
-- Stop button
-- cleaner Retry
-- cache-buster for stream proxy
-- /warm endpoint for keepalive
+Included:
+- Auto fallback player flow
+- IPTV-style client dashboard improvements
+- Favorites per client via browser localStorage
+- Recently watched
+- Custom categories: Shqip, Sport, Gjermani
+- Device limit per client
+- Enable/Disable client
+- Admin quick actions
+- Logs
+- Analytics
+- Branding/settings
+- PWA manifest/service worker
+- Smart engine settings
+- Existing backup/restore/import/export
+- Existing stream proxy/browser player/VLC fallback
 
-Use UptimeRobot:
-https://noxiptv.onrender.com/health
-and optionally:
-https://noxiptv.onrender.com/warm
-
-Render Free can still be slow if many clients watch at once.
+Not included by request:
+- QR code pairing
