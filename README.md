@@ -1,33 +1,20 @@
-# Nox IPTV Cloud Panel V5.0 FULL FIXED
+# Nox IPTV Cloud Panel V5.1 FULL REAL
 
-Ky version është V5.0 i plotë, por pa gevent sepse gevent po dështon në Render build.
-Përdor gunicorn threaded worker:
-
-web: gunicorn --workers 1 --threads 8 --timeout 0 app:app
-
-Included:
-- Auto fallback
-- Browser player
-- Stream proxy
-- VLC Android/Classic fallback
-- Favorites
+This package includes real UI/routes for:
+- Auto fallback: HLS -> proxy -> direct -> VLC Android fallback
+- Favorites for client
 - Recently watched
-- Categories: Shqip, Sport, Gjermani
-- Device limit
+- Custom categories: Shqip, Sport, Gjermani
+- Device limit per client
 - Enable/Disable client
+- Admin quick actions
 - Logs
 - Analytics
 - Branding/settings
-- PWA
-- Backup/Restore
-- Import Clients
-- Import/Export Template
-- Status
-- Quick actions
+- PWA installable app
+- Smart engine settings
+- No QR code
 
 Render:
-Build command:
-pip install -r requirements.txt
-
-Start command:
-gunicorn --workers 1 --threads 8 --timeout 0 app:app
+Build command: pip install -r requirements.txt
+Start command: gunicorn --workers 1 --threads 8 --timeout 0 app:app
