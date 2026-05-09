@@ -1,21 +1,27 @@
-# Nox IPTV Cloud Panel V5.2 Stable Watch
+# Nox IPTV Cloud Panel V5.3 Browser HLS + Advanced Branding
 
 Fixes:
-- Live streams no longer stop after 10-50 seconds due to proxy read timeout.
-- Stream proxy uses long-lived live connection.
-- Categories in client portal reduced to:
-  - Të gjitha
-  - Favorites
-  - Recent
-  - Sport
-- Sport category includes ART SPORT, SUPER SPORT, TRING SPORT, KUJTESA SPORT, EUROSPORT, Fight Box.
-- VLC buttons fixed: Android intent + Classic vlc:// + Open Direct.
-- Auto VLC redirect disabled to avoid opening VLC without channel.
-- More Branding/Settings: colors, background, cards, text, layout/player options.
+- Removed Open Direct button.
+- Adds browser HLS proxy/rewrite:
+  /watch/hls/<id>
+  /watch/hls-seg/<encoded>
+- Browser now tries:
+  1) HLS proxy/rewrite
+  2) original HLS
+  3) MPEG-TS proxy
+  4) VLC buttons as fallback
+- Improved Branding / Smart Engine Settings:
+  - Theme presets
+  - Color picker inputs
+  - Brand name
+  - Logo text
+  - Logo image URL
+  - Layout mode
+  - Player position
+  - Card style
+  - Live preview
+- Adds NOX IPTV default branding/logo.
 
 Render:
-Build command:
-pip install -r requirements.txt
-
-Start command:
-gunicorn --workers 1 --threads 8 --timeout 0 app:app
+Build: pip install -r requirements.txt
+Start: gunicorn --workers 1 --threads 8 --timeout 0 app:app
