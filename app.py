@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V 5.3
+NOX IPTV CLOUD PANEL V4.8
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -391,7 +391,7 @@ def client_login_required():
 
 
 
-# ---------------- V5.3 FULL helpers ----------------
+# ---------------- V5.4 FULL helpers ----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -410,7 +410,7 @@ def get_settings():
     default = {
         "brand_name": "NOX IPTV",
         "logo_text": "NOX",
-        "logo_url": "",
+        "logo_url": "/static/nox_logo.svg",
         "theme_preset": "modern_blue",
         "brand_color": "#2563eb",
         "accent_color": "#16a34a",
@@ -518,7 +518,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V5.3</title>
+  <title>Nox IPTV Panel V4.8</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -1334,11 +1334,12 @@ def watch_home():
             <button class="btn" onclick="retryCurrent()">Retry</button>
             <button class="btn gray" onclick="stopPlayer()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
-            <a class="btn gray" id="openVlcAndroid" href="#">Open VLC Android</a>
-            <a class="btn gray" id="openVlcClassic" href="#">Open VLC Classic</a>
+            <a class="btn gray" id="openVlcAndroid" href="#" style="display:none">VLC Android</a>
+            <a class="btn gray" id="openVlcClassic" href="#" style="display:none">VLC Classic</a>
             <a class="btn gray" id="openDirect" href="#" target="_blank">Open Direct</a>
           </p>
-          <p class="hint" id="hint">Smart engine aktiv: browser → proxy → direct/VLC fallback.</p>
+          <p class="hint" id="hint">Force Browser Mode aktiv: kanali duhet të shfaqet në ekran këtu.</p>
+          <p class="hint" id="methodStatus">Metoda: gati</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -1429,91 +1430,200 @@ def watch_home():
         video.load();
       }}
 
+      function setStatus(text) {{
+        const el = document.getElementById("methodStatus");
+        if (el) el.innerText = text;
+      }}
+
       function startPlayer(ch) {{
         playToken += 1;
         const token = playToken;
+        stopPlayer();
+        document.getElementById("hint").innerText = "Po hapet live në browser...";
+        setStatus("Metoda 1/5: HLS proxy");
+        tryHlsProxy(ch, token);
+      }}
+
+      function failNext(token, label, nextFn) {{
+        if (token !== playToken) return;
+        setStatus(label);
+        setTimeout(nextFn, 250);
+      }}
+
+      function attachVideoEvents(token, methodName) {{
         const video = document.getElementById("video");
         const hint = document.getElementById("hint");
-        stopPlayer();
+        let started = false;
+        video.onplaying = () => {{
+          if (token === playToken) {{
+            started = true;
+            hint.innerText = "Live tani në browser.";
+            setStatus("Aktive: " + methodName);
+            try {{ navigator.sendBeacon("/watch/log", JSON.stringify({{channel: currentChannel.name, id: currentChannel.i, event: "browser_playing", method: methodName}})); }} catch(e) {{}}
+          }}
+        }};
+        video.onwaiting = () => {{
+          if (token === playToken && !started) hint.innerText = "Duke ngarkuar live stream...";
+        }};
+        video.onerror = () => {{}};
+        setTimeout(() => {{
+          if (token === playToken && !started && video.readyState < 2) {{
+            // handled by each method timeout
+          }}
+        }}, 6000);
+      }}
 
-        hint.innerText = "Duke provuar Browser HLS...";
-        video.onplaying = () => {{ if (token === playToken) hint.innerText = "Live tani në browser."; }};
-        video.onwaiting = () => {{ if (token === playToken) hint.innerText = "Duke ngarkuar live stream..."; }};
-        video.onerror = () => {{ if (token === playToken) tryProxy(ch, token); }};
+      function tryHlsProxy(ch, token) {{
+        if (token !== playToken) return;
+        const video = document.getElementById("video");
+        const src = "/watch/hls/" + ch.i + "?t=" + Date.now();
+        attachVideoEvents(token, "HLS proxy");
 
-        // Strongest browser method: same-origin HLS proxy/rewrite.
-        const hlsProxy = "/watch/hls/" + ch.i + "?t=" + Date.now();
+        if (window.hls) {{ try {{ window.hls.destroy(); }} catch(e) {{}} window.hls = null; }}
+        if (Hls.isSupported()) {{
+          try {{
+            window.hls = new Hls({{
+              lowLatencyMode:true,
+              liveSyncDurationCount:2,
+              maxBufferLength:20,
+              backBufferLength:8,
+              enableWorker:true,
+              manifestLoadingTimeOut:7000,
+              levelLoadingTimeOut:7000,
+              fragLoadingTimeOut:9000
+            }});
+            window.hls.loadSource(src);
+            window.hls.attachMedia(video);
+            let parsed = false;
+            window.hls.on(Hls.Events.MANIFEST_PARSED, () => {{
+              parsed = true;
+              video.play().catch(() => failNext(token, "Metoda 2/5: HLS direkt", () => tryHlsDirect(ch, token)));
+            }});
+            window.hls.on(Hls.Events.ERROR, (event, data) => {{
+              if (data.fatal && token === playToken) failNext(token, "Metoda 2/5: HLS direkt", () => tryHlsDirect(ch, token));
+            }});
+            setTimeout(() => {{
+              if (token === playToken && (!parsed || video.readyState < 2)) {{
+                failNext(token, "Metoda 2/5: HLS direkt", () => tryHlsDirect(ch, token));
+              }}
+            }}, 8000);
+          }} catch(e) {{
+            failNext(token, "Metoda 2/5: HLS direkt", () => tryHlsDirect(ch, token));
+          }}
+        }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
+          video.src = src;
+          video.play().catch(() => failNext(token, "Metoda 2/5: HLS direkt", () => tryHlsDirect(ch, token)));
+          setTimeout(() => {{
+            if (token === playToken && video.readyState < 2) failNext(token, "Metoda 2/5: HLS direkt", () => tryHlsDirect(ch, token));
+          }}, 8000);
+        }} else {{
+          failNext(token, "Metoda 2/5: HLS direkt", () => tryHlsDirect(ch, token));
+        }}
+      }}
+
+      function tryHlsDirect(ch, token) {{
+        if (token !== playToken) return;
+        stopPlayer(false);
+        const video = document.getElementById("video");
+        const lower = ch.url.toLowerCase();
+        attachVideoEvents(token, "HLS direkt");
+
+        if (!lower.includes(".m3u8")) {{
+          failNext(token, "Metoda 3/5: MPEGTS proxy", () => tryMpegTsProxy(ch, token));
+          return;
+        }}
 
         if (Hls.isSupported()) {{
-          window.hls = new Hls({{
-            lowLatencyMode:true,
-            liveSyncDurationCount:2,
-            maxBufferLength:18,
-            backBufferLength:8,
-            enableWorker:true,
-            manifestLoadingTimeOut:10000,
-            fragLoadingTimeOut:15000
-          }});
-          window.hls.loadSource(hlsProxy);
-          window.hls.attachMedia(video);
-          window.hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => tryOriginalHls(ch, token)));
-          window.hls.on(Hls.Events.ERROR, (event, data) => {{
-            if (data.fatal && token === playToken) tryOriginalHls(ch, token);
-          }});
-        }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
-          video.src = hlsProxy;
-          video.play().catch(() => tryOriginalHls(ch, token));
+          try {{
+            window.hls = new Hls({{lowLatencyMode:true, liveSyncDurationCount:2, maxBufferLength:20, enableWorker:true}});
+            window.hls.loadSource(ch.url);
+            window.hls.attachMedia(video);
+            let parsed = false;
+            window.hls.on(Hls.Events.MANIFEST_PARSED, () => {{
+              parsed = true;
+              video.play().catch(() => failNext(token, "Metoda 3/5: MPEGTS proxy", () => tryMpegTsProxy(ch, token)));
+            }});
+            window.hls.on(Hls.Events.ERROR, (event, data) => {{
+              if (data.fatal && token === playToken) failNext(token, "Metoda 3/5: MPEGTS proxy", () => tryMpegTsProxy(ch, token));
+            }});
+            setTimeout(() => {{
+              if (token === playToken && (!parsed || video.readyState < 2)) failNext(token, "Metoda 3/5: MPEGTS proxy", () => tryMpegTsProxy(ch, token));
+            }}, 7000);
+          }} catch(e) {{
+            failNext(token, "Metoda 3/5: MPEGTS proxy", () => tryMpegTsProxy(ch, token));
+          }}
         }} else {{
-          tryOriginalHls(ch, token);
+          video.src = ch.url;
+          video.play().catch(() => failNext(token, "Metoda 3/5: MPEGTS proxy", () => tryMpegTsProxy(ch, token)));
+          setTimeout(() => {{
+            if (token === playToken && video.readyState < 2) failNext(token, "Metoda 3/5: MPEGTS proxy", () => tryMpegTsProxy(ch, token));
+          }}, 7000);
         }}
       }}
 
-      function tryOriginalHls(ch, token) {{
+      function tryMpegTsProxy(ch, token) {{
+        if (token !== playToken) return;
+        stopPlayer(false);
         const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
-        const lower = ch.url.toLowerCase();
-        hint.innerText = "Duke provuar HLS direkt...";
-        if (lower.includes(".m3u8") && Hls.isSupported()) {{
-          if (window.hls) {{ try {{ window.hls.destroy(); }} catch(e) {{}} }}
-          window.hls = new Hls({{lowLatencyMode:true, liveSyncDurationCount:2, maxBufferLength:18, enableWorker:true}});
-          window.hls.loadSource(ch.url);
-          window.hls.attachMedia(video);
-          window.hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => tryProxy(ch, token)));
-          window.hls.on(Hls.Events.ERROR, (event, data) => {{ if (data.fatal) tryProxy(ch, token); }});
-        }} else {{
-          tryProxy(ch, token);
-        }}
-      }}
-
-      function tryProxy(ch, token) {{
-        const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
         const proxyUrl = "/watch/stream/" + ch.i + "?t=" + Date.now();
-        hint.innerText = "Duke provuar proxy...";
+        attachVideoEvents(token, "MPEGTS proxy");
+
         if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
           try {{
-            window.tsPlayer = mpegts.createPlayer({{type:"mpegts", isLive:true, url:proxyUrl, cors:false, enableStashBuffer:false, stashInitialSize:64}});
+            window.tsPlayer = mpegts.createPlayer({{
+              type:"mpegts",
+              isLive:true,
+              url:proxyUrl,
+              cors:false,
+              enableStashBuffer:true,
+              stashInitialSize:384,
+              lazyLoad:false,
+              autoCleanupSourceBuffer:true
+            }});
             window.tsPlayer.attachMediaElement(video);
             window.tsPlayer.load();
             window.tsPlayer.play();
+            setTimeout(() => {{
+              if (token === playToken && video.readyState < 2) failNext(token, "Metoda 4/5: direct video", () => tryDirectVideo(ch, token));
+            }}, 9000);
           }} catch(e) {{
-            tryDirect(ch, token);
+            failNext(token, "Metoda 4/5: direct video", () => tryDirectVideo(ch, token));
           }}
         }} else {{
-          video.src = proxyUrl;
-          video.play().catch(() => tryDirect(ch, token));
+          failNext(token, "Metoda 4/5: direct video", () => tryDirectVideo(ch, token));
         }}
       }}
 
-      function tryDirect(ch, token) {{
+      function tryDirectVideo(ch, token) {{
+        if (token !== playToken) return;
+        stopPlayer(false);
         const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
-        hint.innerText = "Duke provuar direct...";
+        attachVideoEvents(token, "Direct video");
         video.src = ch.url;
-        video.play().catch(() => {{
-          hint.innerText = "Browser nuk e hapi. Provo Open VLC Android ose Open Direct.";
-          // Auto VLC redirect disabled in V5.3; buttons remain as fallback.
-        }});
+        video.play().catch(() => failNext(token, "Metoda 5/5: proxy direct", () => tryProxyDirectVideo(ch, token)));
+        setTimeout(() => {{
+          if (token === playToken && video.readyState < 2) failNext(token, "Metoda 5/5: proxy direct", () => tryProxyDirectVideo(ch, token));
+        }}, 7000);
+      }}
+
+      function tryProxyDirectVideo(ch, token) {{
+        if (token !== playToken) return;
+        stopPlayer(false);
+        const video = document.getElementById("video");
+        const proxyUrl = "/watch/stream/" + ch.i + "?direct=1&t=" + Date.now();
+        attachVideoEvents(token, "Proxy direct video");
+        video.src = proxyUrl;
+        video.play().catch(() => finalBrowserFail(token));
+        setTimeout(() => {{
+          if (token === playToken && video.readyState < 2) finalBrowserFail(token);
+        }}, 9000);
+      }}
+
+      function finalBrowserFail(token) {{
+        if (token !== playToken) return;
+        document.getElementById("hint").innerText = "Ky kanal nuk u hap në browser me asnjë metodë. Sistemi i ka provuar të gjitha metodat browser.";
+        setStatus("Dështoi në browser. VLC fallback është rezervë.");
+        try {{ navigator.sendBeacon("/watch/log", JSON.stringify({{channel: currentChannel.name, id: currentChannel.i, event: "browser_failed_all"}})); }} catch(e) {{}}
       }}
 
       function retryCurrent() {{ if (currentChannel) startPlayer(currentChannel); }}
@@ -1682,7 +1792,7 @@ def settings_page():
 
         s["brand_name"] = request.form.get("brand_name", "NOX IPTV")
         s["logo_text"] = request.form.get("logo_text", "NOX")
-        s["logo_url"] = request.form.get("logo_url", "")
+        s["logo_url"] = request.form.get("logo_url", "/static/nox_logo.svg")
         s["brand_color"] = request.form.get("brand_color", s.get("brand_color", "#2563eb"))
         s["accent_color"] = request.form.get("accent_color", s.get("accent_color", "#16a34a"))
         s["background_color"] = request.form.get("background_color", s.get("background_color", "#0b1220"))
@@ -1719,7 +1829,7 @@ def settings_page():
             <label>Logo text</label>
             <input name="logo_text" value="{s.get('logo_text','NOX')}">
             <label>Logo image URL optional</label>
-            <input name="logo_url" value="{s.get('logo_url','')}" placeholder="https://.../logo.png">
+            <input name="logo_url" value="{s.get('logo_url','/static/nox_logo.svg')}" placeholder="/static/nox_logo.svg ose https://.../logo.png">
           </div>
 
           <div class="card">
@@ -1798,6 +1908,15 @@ def pwa_manifest():
 @app.route("/sw.js")
 def service_worker():
     return Response("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());", mimetype="application/javascript")
+
+
+@app.route("/watch/capabilities")
+def watch_capabilities():
+    return {
+        "ok": True,
+        "browser_methods": ["hls_proxy", "hls_direct", "mpegts_proxy", "direct_video", "proxy_direct_video"],
+        "note": "V5.4 tries all browser methods automatically before showing failure."
+    }
 
 @app.route("/health")
 def health():
