@@ -1,14 +1,16 @@
-# Nox IPTV Cloud Panel V4.3
+# Nox IPTV Cloud Panel V4.5
 
-## Ndryshimet V4.3
+New:
+- Backup All and Restore
+- Import/Export Master Template
+- Status page
+- Duplicate client
+- Favourite marker
+- Private client notes
+- Direct VLC open on client portal click
+- Native Android API
+- Improved /health for UptimeRobot
 
-- Client Portal: `/watch`
-- Shtohet butoni `Open in VLC`
-- Kur zgjidhet një kanal, butoni hap `vlc://STREAM_URL`
-- Shtohet `Copy URL` për rastet kur telefoni nuk e hap direkt VLC
-- Browser player mbetet: HLS/M3U8 + MPEGTS attempt
-
-## Shënim
-
-Për iPhone/Android, klienti duhet të ketë të instaluar VLC app.
-Nëse `vlc://` nuk hapet në disa browsera, përdor `Copy URL` dhe ngjite në VLC.
+Render Free:
+Use /health every 5 minutes in UptimeRobot.
+Use Backup All often because free storage may reset.
