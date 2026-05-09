@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.6
+NOX IPTV CLOUD PANEL V4.7
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -390,7 +390,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.6</title>
+  <title>Nox IPTV Panel V4.7</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -424,7 +424,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4.6</h1>
+      <h1>Nox IPTV Panel V4.7</h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -945,7 +945,7 @@ def backup_all():
     if not login_required():
         return redirect("/login")
     data = {
-        "version": "v4.6",
+        "version": "v4.7",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
@@ -1144,10 +1144,11 @@ def watch_home():
         <div class="now" id="now">Zgjedh një kanal. Transmetimi hapet këtu në ekran.</div>
         <p>
           <button class="btn" onclick="retryCurrent()">Retry</button>
+          <button class="btn gray" onclick="stopPlayer()">Stop</button>
           <a class="btn gray" id="openVlc" href="#">Open in VLC</a>
           <button class="btn gray" onclick="copyUrl()">Copy URL</button>
         </p>
-        <p class="hint" id="hint">Kliko kanal. Për PC/Android përdoret player direkt në browser. VLC është vetëm rezervë.</p>
+        <p class="hint" id="hint">Kliko kanal. Nëse ngarkon ngadalë, prit 5-10 sekonda ose kliko Retry.</p>
       </div>
       <div class="grid" id="channels"></div>
     </div>
@@ -1155,6 +1156,7 @@ def watch_home():
       const channels = {data_json};
       let currentUrl = "";
       let currentChannel = null;
+      let playToken = 0;
 
       function playChannel(ch) {{
         currentChannel = ch;
@@ -1164,81 +1166,109 @@ def watch_home():
         startPlayer(ch);
       }}
 
-      function startPlayer(ch) {{
+      function stopPlayer() {{
         const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
-        const proxyUrl = "/watch/stream/" + ch.i;
-
         if (window.hls) {{
           try {{ window.hls.destroy(); }} catch(e) {{}}
           window.hls = null;
         }}
         if (window.tsPlayer) {{
+          try {{ window.tsPlayer.pause(); }} catch(e) {{}}
+          try {{ window.tsPlayer.unload(); }} catch(e) {{}}
+          try {{ window.tsPlayer.detachMediaElement(); }} catch(e) {{}}
           try {{ window.tsPlayer.destroy(); }} catch(e) {{}}
           window.tsPlayer = null;
         }}
-
-        video.pause();
+        try {{ video.pause(); }} catch(e) {{}}
         video.removeAttribute("src");
         video.load();
+      }}
+
+      function startPlayer(ch) {{
+        playToken += 1;
+        const token = playToken;
+        const video = document.getElementById("video");
+        const hint = document.getElementById("hint");
+        const proxyUrl = "/watch/stream/" + ch.i + "?t=" + Date.now();
+
+        stopPlayer();
 
         const lower = ch.url.toLowerCase();
+        hint.innerText = "Duke u lidhur me kanalin...";
 
+        video.onwaiting = function() {{
+          if (token === playToken) hint.innerText = "Duke ngarkuar stream... prit pak.";
+        }};
+        video.onplaying = function() {{
+          if (token === playToken) hint.innerText = "Live tani.";
+        }};
         video.onerror = function() {{
-          hint.innerText = "Browseri nuk e hapi këtë kanal. Provo Retry ose Open in VLC.";
+          if (token === playToken) hint.innerText = "Nuk u hap në browser. Provo Retry ose Open in VLC.";
         }};
 
         if (lower.includes(".m3u8")) {{
           if (Hls.isSupported()) {{
             window.hls = new Hls({{
               lowLatencyMode: true,
-              liveSyncDurationCount: 3,
-              maxBufferLength: 20,
-              enableWorker: true
+              liveSyncDurationCount: 2,
+              maxBufferLength: 12,
+              maxMaxBufferLength: 20,
+              backBufferLength: 10,
+              enableWorker: true,
+              manifestLoadingTimeOut: 8000,
+              levelLoadingTimeOut: 8000,
+              fragLoadingTimeOut: 10000
             }});
             window.hls.loadSource(ch.url);
             window.hls.attachMedia(video);
             window.hls.on(Hls.Events.MANIFEST_PARSED, function() {{
-              video.play().catch(() => {{}});
+              if (token === playToken) video.play().catch(() => {{}});
             }});
             window.hls.on(Hls.Events.ERROR, function(event, data) {{
-              if (data.fatal) {{
-                hint.innerText = "HLS nuk u hap direkt. Provo Open in VLC.";
+              if (data.fatal && token === playToken) {{
+                hint.innerText = "HLS nuk u hap direkt. Duke provuar proxy...";
+                playMpegTsProxy(proxyUrl, token);
               }}
             }});
-            hint.innerText = "HLS/M3U8 player aktiv...";
           }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
             video.src = ch.url;
             video.play().catch(() => {{}});
-            hint.innerText = "Native HLS player aktiv...";
           }} else {{
-            hint.innerText = "Ky browser nuk suporton HLS.";
+            playMpegTsProxy(proxyUrl, token);
           }}
         }} else {{
-          if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
-            try {{
-              window.tsPlayer = mpegts.createPlayer({{
-                type: "mpegts",
-                isLive: true,
-                url: proxyUrl,
-                cors: false,
-                enableStashBuffer: false,
-                stashInitialSize: 128
-              }});
-              window.tsPlayer.attachMediaElement(video);
-              window.tsPlayer.load();
-              window.tsPlayer.play();
-              hint.innerText = "MPEG-TS proxy player aktiv në browser...";
-            }} catch(e) {{
-              hint.innerText = "MPEG-TS player nuk u hap. Provo Open in VLC.";
-            }}
-          }} else {{
-            video.src = proxyUrl;
-            video.play().catch(() => {{
-              hint.innerText = "Browseri nuk e suporton këtë format. Provo Open in VLC.";
+          playMpegTsProxy(proxyUrl, token);
+        }}
+      }}
+
+      function playMpegTsProxy(proxyUrl, token) {{
+        const video = document.getElementById("video");
+        const hint = document.getElementById("hint");
+
+        if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
+          try {{
+            window.tsPlayer = mpegts.createPlayer({{
+              type: "mpegts",
+              isLive: true,
+              url: proxyUrl,
+              cors: false,
+              enableStashBuffer: false,
+              stashInitialSize: 64,
+              lazyLoad: false,
+              autoCleanupSourceBuffer: true
             }});
-            hint.innerText = "Direct proxy playback...";
+            window.tsPlayer.attachMediaElement(video);
+            window.tsPlayer.load();
+            window.tsPlayer.play();
+            if (token === playToken) hint.innerText = "Duke hapur MPEG-TS në browser...";
+          }} catch(e) {{
+            if (token === playToken) hint.innerText = "MPEG-TS nuk u hap. Provo Open in VLC.";
           }}
+        }} else {{
+          video.src = proxyUrl;
+          video.play().catch(() => {{
+            if (token === playToken) hint.innerText = "Browseri nuk e suporton këtë format. Provo Open in VLC.";
+          }});
         }}
       }}
 
@@ -1307,9 +1337,10 @@ def watch_stream_proxy(channel_id):
             "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
             "Accept": "*/*",
             "Connection": "keep-alive",
+            "Accept-Encoding": "identity",
         }
 
-        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(10, None), allow_redirects=True)
+        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(6, 20), allow_redirects=True)
         content_type = upstream.headers.get("Content-Type") or "video/mp2t"
         low = content_type.lower()
         if "mpeg" not in low and "video" not in low and "octet" not in low:
@@ -1317,7 +1348,7 @@ def watch_stream_proxy(channel_id):
 
         def generate():
             try:
-                for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                for chunk in upstream.iter_content(chunk_size=16 * 1024):
                     if chunk:
                         yield chunk
             finally:
@@ -1405,12 +1436,21 @@ def api_channels():
         return {"ok": False, "error": str(e)}, 500
 
 
+
+@app.route("/warm")
+def warm():
+    return {
+        "ok": True,
+        "message": "warm",
+        "time": datetime.now().isoformat(),
+    }
+
 @app.route("/health")
 def health():
     return {
         "ok": True,
         "service": "noxiptv",
-        "version": "v4.6",
+        "version": "v4.7",
         "time": datetime.now().isoformat(),
         "clients": len(load_clients()),
         "template_channels": get_template_text().count("#EXTINF"),
