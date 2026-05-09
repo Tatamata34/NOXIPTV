@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.9
+NOX IPTV CLOUD PANEL V 5.3
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -14,9 +14,10 @@ import re
 import socket
 import time
 import uuid
+import base64
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse, urljoin
 
 import requests
 from flask import Flask, Response, abort, redirect, render_template_string, request, session, url_for
@@ -390,7 +391,7 @@ def client_login_required():
 
 
 
-# ---------------- V5.2 FULL helpers ----------------
+# ---------------- V5.3 FULL helpers ----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -407,7 +408,10 @@ def save_json_file(path, data):
 
 def get_settings():
     default = {
-        "brand_name": "Nox IPTV",
+        "brand_name": "NOX IPTV",
+        "logo_text": "NOX",
+        "logo_url": "",
+        "theme_preset": "modern_blue",
         "brand_color": "#2563eb",
         "accent_color": "#16a34a",
         "background_color": "#0b1220",
@@ -514,7 +518,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.8</title>
+  <title>Nox IPTV Panel V5.3</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -1297,7 +1301,13 @@ def watch_home():
       @media(max-width:800px) {{ .layout {{ grid-template-columns:1fr; }} .side {{ position:relative; top:0; }} }}
     </style>
     <div class="top">
-      <h2>{brand} - {c.get('name')}</h2>
+      <div class="brandrow">
+        <div class="noxlogo">{f'<img src="{settings.get("logo_url")}">' if settings.get("logo_url") else settings.get("logo_text","NOX")}</div>
+        <div>
+          <div class="brandtitle">{brand}</div>
+          <div class="hint">{c.get('name')}</div>
+        </div>
+      </div>
       <div class="bar">
         <input id="search" placeholder="Kërko kanal...">
         <select id="group">
@@ -1375,10 +1385,8 @@ def watch_home():
         const classic = "vlc://" + url;
         const a1 = document.getElementById("openVlcAndroid");
         const a2 = document.getElementById("openVlcClassic");
-        const a3 = document.getElementById("openDirect");
         if (a1) a1.href = httpsIntent;
         if (a2) a2.href = classic;
-        if (a3) a3.href = url;
       }}
 
       function markRecent(ch) {{
@@ -1426,24 +1434,52 @@ def watch_home():
         const token = playToken;
         const video = document.getElementById("video");
         const hint = document.getElementById("hint");
-        const proxyUrl = "/watch/stream/" + ch.i + "?t=" + Date.now();
         stopPlayer();
-        const lower = ch.url.toLowerCase();
-        hint.innerText = "Duke u lidhur...";
 
-        video.onplaying = () => {{ if (token === playToken) hint.innerText = "Live tani."; }};
-        video.onwaiting = () => {{ if (token === playToken) hint.innerText = "Duke ngarkuar..."; }};
+        hint.innerText = "Duke provuar Browser HLS...";
+        video.onplaying = () => {{ if (token === playToken) hint.innerText = "Live tani në browser."; }};
+        video.onwaiting = () => {{ if (token === playToken) hint.innerText = "Duke ngarkuar live stream..."; }};
         video.onerror = () => {{ if (token === playToken) tryProxy(ch, token); }};
 
+        // Strongest browser method: same-origin HLS proxy/rewrite.
+        const hlsProxy = "/watch/hls/" + ch.i + "?t=" + Date.now();
+
+        if (Hls.isSupported()) {{
+          window.hls = new Hls({{
+            lowLatencyMode:true,
+            liveSyncDurationCount:2,
+            maxBufferLength:18,
+            backBufferLength:8,
+            enableWorker:true,
+            manifestLoadingTimeOut:10000,
+            fragLoadingTimeOut:15000
+          }});
+          window.hls.loadSource(hlsProxy);
+          window.hls.attachMedia(video);
+          window.hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => tryOriginalHls(ch, token)));
+          window.hls.on(Hls.Events.ERROR, (event, data) => {{
+            if (data.fatal && token === playToken) tryOriginalHls(ch, token);
+          }});
+        }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
+          video.src = hlsProxy;
+          video.play().catch(() => tryOriginalHls(ch, token));
+        }} else {{
+          tryOriginalHls(ch, token);
+        }}
+      }}
+
+      function tryOriginalHls(ch, token) {{
+        const video = document.getElementById("video");
+        const hint = document.getElementById("hint");
+        const lower = ch.url.toLowerCase();
+        hint.innerText = "Duke provuar HLS direkt...";
         if (lower.includes(".m3u8") && Hls.isSupported()) {{
-          window.hls = new Hls({{lowLatencyMode:true, liveSyncDurationCount:2, maxBufferLength:12, enableWorker:true}});
+          if (window.hls) {{ try {{ window.hls.destroy(); }} catch(e) {{}} }}
+          window.hls = new Hls({{lowLatencyMode:true, liveSyncDurationCount:2, maxBufferLength:18, enableWorker:true}});
           window.hls.loadSource(ch.url);
           window.hls.attachMedia(video);
           window.hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => tryProxy(ch, token)));
           window.hls.on(Hls.Events.ERROR, (event, data) => {{ if (data.fatal) tryProxy(ch, token); }});
-        }} else if (lower.includes(".m3u8") && video.canPlayType("application/vnd.apple.mpegurl")) {{
-          video.src = ch.url;
-          video.play().catch(() => tryProxy(ch, token));
         }} else {{
           tryProxy(ch, token);
         }}
@@ -1476,7 +1512,7 @@ def watch_home():
         video.src = ch.url;
         video.play().catch(() => {{
           hint.innerText = "Browser nuk e hapi. Provo Open VLC Android ose Open Direct.";
-          // Auto VLC redirect disabled in V5.2; buttons remain as fallback.
+          // Auto VLC redirect disabled in V5.3; buttons remain as fallback.
         }});
       }}
 
@@ -1629,52 +1665,134 @@ def settings_page():
         return redirect("/login")
     s = get_settings()
     msg = ""
+
+    presets = {
+        "modern_blue": {"brand_color":"#2563eb","accent_color":"#22c55e","background_color":"#0b1220","card_color":"#111827","text_color":"#e5e7eb"},
+        "premium_gold": {"brand_color":"#d97706","accent_color":"#facc15","background_color":"#111827","card_color":"#1f2937","text_color":"#fff7ed"},
+        "neon_purple": {"brand_color":"#7c3aed","accent_color":"#06b6d4","background_color":"#09090b","card_color":"#18181b","text_color":"#f4f4f5"},
+        "red_sport": {"brand_color":"#dc2626","accent_color":"#f97316","background_color":"#0f172a","card_color":"#1e293b","text_color":"#f8fafc"},
+        "light_clean": {"brand_color":"#2563eb","accent_color":"#16a34a","background_color":"#f1f5f9","card_color":"#ffffff","text_color":"#0f172a"}
+    }
+
     if request.method == "POST":
-        s["brand_name"] = request.form.get("brand_name", "Nox IPTV")
-        s["brand_color"] = request.form.get("brand_color", "#2563eb")
-        s["accent_color"] = request.form.get("accent_color", "#16a34a")
-        s["background_color"] = request.form.get("background_color", "#0b1220")
-        s["card_color"] = request.form.get("card_color", "#111827")
-        s["text_color"] = request.form.get("text_color", "#e5e7eb")
+        preset = request.form.get("theme_preset", s.get("theme_preset", "modern_blue"))
+        s["theme_preset"] = preset
+        if request.form.get("apply_preset") == "on" and preset in presets:
+            s.update(presets[preset])
+
+        s["brand_name"] = request.form.get("brand_name", "NOX IPTV")
+        s["logo_text"] = request.form.get("logo_text", "NOX")
+        s["logo_url"] = request.form.get("logo_url", "")
+        s["brand_color"] = request.form.get("brand_color", s.get("brand_color", "#2563eb"))
+        s["accent_color"] = request.form.get("accent_color", s.get("accent_color", "#16a34a"))
+        s["background_color"] = request.form.get("background_color", s.get("background_color", "#0b1220"))
+        s["card_color"] = request.form.get("card_color", s.get("card_color", "#111827"))
+        s["text_color"] = request.form.get("text_color", s.get("text_color", "#e5e7eb"))
         s["layout_mode"] = request.form.get("layout_mode", "sidebar")
         s["player_position"] = request.form.get("player_position", "top")
+        s["card_style"] = request.form.get("card_style", "rounded")
         s["smart_engine"] = request.form.get("smart_engine") == "on"
         s["auto_fallback"] = request.form.get("auto_fallback") == "on"
         s["vlc_auto_fallback"] = request.form.get("vlc_auto_fallback") == "on"
         save_settings(s)
         msg = "<p class='ok'>Settings u ruajtën.</p>"
+
+    def sel(name):
+        return "selected" if s.get("theme_preset") == name else ""
+
     body = f"""
-    <div class="card"><h2>Branding / Smart Engine Settings</h2>{msg}
+    <style>
+      .preview {{ background:{s.get('background_color','#0b1220')}; color:{s.get('text_color','#e5e7eb')}; padding:18px; border-radius:18px; }}
+      .preview-card {{ background:{s.get('card_color','#111827')}; padding:15px; border-radius:16px; margin-top:10px; }}
+      .colorrow {{ display:grid; grid-template-columns:160px 1fr 90px; gap:10px; align-items:center; }}
+      .colorrow input[type=color] {{ height:44px; padding:2px; }}
+    </style>
+    <div class="card">
+      <h2>Branding / Smart Engine Settings</h2>
+      {msg}
       <form method="post">
-        <label>Brand name</label><input name="brand_name" value="{s.get('brand_name','Nox IPTV')}">
-        <label>Brand color</label><input name="brand_color" value="{s.get('brand_color','#2563eb')}">
-        <label>Accent color</label><input name="accent_color" value="{s.get('accent_color','#16a34a')}">
-        <label>Background color</label><input name="background_color" value="{s.get('background_color','#0b1220')}">
-        <label>Card color</label><input name="card_color" value="{s.get('card_color','#111827')}">
-        <label>Text color</label><input name="text_color" value="{s.get('text_color','#e5e7eb')}">
-        <label>Layout mode</label>
-        <select name="layout_mode">
-          <option value="sidebar" {'selected' if s.get('layout_mode')=='sidebar' else ''}>Sidebar</option>
-          <option value="topbar" {'selected' if s.get('layout_mode')=='topbar' else ''}>Topbar</option>
-        </select>
-        <label>Player position</label>
-        <select name="player_position">
-          <option value="top" {'selected' if s.get('player_position')=='top' else ''}>Top</option>
-          <option value="sticky" {'selected' if s.get('player_position')=='sticky' else ''}>Sticky</option>
-        </select>
-        <label><input style="width:auto" type="checkbox" name="smart_engine" {'checked' if s.get('smart_engine') else ''}> Smart stream engine</label><br>
-        <label><input style="width:auto" type="checkbox" name="auto_fallback" {'checked' if s.get('auto_fallback') else ''}> Auto fallback</label><br>
-        <label><input style="width:auto" type="checkbox" name="vlc_auto_fallback" {'checked' if s.get('vlc_auto_fallback') else ''}> Auto VLC fallback on Android</label><br><br>
+        <div class="grid">
+          <div class="card">
+            <h3>Logo / Brand</h3>
+            <label>Brand name</label>
+            <input name="brand_name" value="{s.get('brand_name','NOX IPTV')}">
+            <label>Logo text</label>
+            <input name="logo_text" value="{s.get('logo_text','NOX')}">
+            <label>Logo image URL optional</label>
+            <input name="logo_url" value="{s.get('logo_url','')}" placeholder="https://.../logo.png">
+          </div>
+
+          <div class="card">
+            <h3>Theme Preset</h3>
+            <label>Choose design</label>
+            <select name="theme_preset">
+              <option value="modern_blue" {sel('modern_blue')}>Modern Blue</option>
+              <option value="premium_gold" {sel('premium_gold')}>Premium Gold</option>
+              <option value="neon_purple" {sel('neon_purple')}>Neon Purple</option>
+              <option value="red_sport" {sel('red_sport')}>Red Sport</option>
+              <option value="light_clean" {sel('light_clean')}>Light Clean</option>
+            </select>
+            <label><input style="width:auto" type="checkbox" name="apply_preset"> Apply preset colors</label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Advanced Colors</h3>
+          <div class="colorrow"><label>Main color</label><input type="color" name="brand_color" value="{s.get('brand_color','#2563eb')}"><input name="brand_color_text" value="{s.get('brand_color','#2563eb')}" disabled></div>
+          <div class="colorrow"><label>Accent color</label><input type="color" name="accent_color" value="{s.get('accent_color','#16a34a')}"><input value="{s.get('accent_color','#16a34a')}" disabled></div>
+          <div class="colorrow"><label>Background</label><input type="color" name="background_color" value="{s.get('background_color','#0b1220')}"><input value="{s.get('background_color','#0b1220')}" disabled></div>
+          <div class="colorrow"><label>Cards</label><input type="color" name="card_color" value="{s.get('card_color','#111827')}"><input value="{s.get('card_color','#111827')}" disabled></div>
+          <div class="colorrow"><label>Text</label><input type="color" name="text_color" value="{s.get('text_color','#e5e7eb')}"><input value="{s.get('text_color','#e5e7eb')}" disabled></div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <h3>Layout</h3>
+            <label>Layout mode</label>
+            <select name="layout_mode">
+              <option value="sidebar" {'selected' if s.get('layout_mode')=='sidebar' else ''}>Sidebar categories</option>
+              <option value="topbar" {'selected' if s.get('layout_mode')=='topbar' else ''}>Topbar compact</option>
+            </select>
+            <label>Player position</label>
+            <select name="player_position">
+              <option value="top" {'selected' if s.get('player_position')=='top' else ''}>Top</option>
+              <option value="sticky" {'selected' if s.get('player_position')=='sticky' else ''}>Sticky</option>
+            </select>
+            <label>Card style</label>
+            <select name="card_style">
+              <option value="rounded" {'selected' if s.get('card_style')=='rounded' else ''}>Rounded</option>
+              <option value="sharp" {'selected' if s.get('card_style')=='sharp' else ''}>Sharp</option>
+              <option value="glass" {'selected' if s.get('card_style')=='glass' else ''}>Glass</option>
+            </select>
+          </div>
+
+          <div class="card">
+            <h3>Smart Engine</h3>
+            <label><input style="width:auto" type="checkbox" name="smart_engine" {'checked' if s.get('smart_engine') else ''}> Smart stream engine</label><br>
+            <label><input style="width:auto" type="checkbox" name="auto_fallback" {'checked' if s.get('auto_fallback') else ''}> Auto fallback browser/proxy</label><br>
+            <label><input style="width:auto" type="checkbox" name="vlc_auto_fallback" {'checked' if s.get('vlc_auto_fallback') else ''}> Auto VLC fallback Android</label>
+          </div>
+        </div>
+
+        <div class="preview">
+          <h3>Live Preview</h3>
+          <div class="preview-card">
+            <b>{s.get('brand_name','NOX IPTV')}</b><br>
+            Channel card preview · Sport · Live
+          </div>
+        </div>
+        <br>
         <button>Save Settings</button>
       </form>
-    </div>"""
+    </div>
+    """
     return admin_page(body)
 
 
 @app.route("/manifest.json")
 def pwa_manifest():
     s = get_settings()
-    return {"name": s.get("brand_name","Nox IPTV"), "short_name": s.get("brand_name","Nox IPTV"), "start_url": "/watch", "display": "standalone", "background_color": "#0b1220", "theme_color": s.get("brand_color","#2563eb"), "icons": []}
+    return {"name": s.get("brand_name","NOX IPTV"), "short_name": s.get("brand_name","NOX IPTV"), "start_url": "/watch", "display": "standalone", "background_color": "#0b1220", "theme_color": s.get("brand_color","#2563eb"), "icons": []}
 
 
 @app.route("/sw.js")
