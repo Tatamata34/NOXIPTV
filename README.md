@@ -1,13 +1,17 @@
-# Nox IPTV Cloud Panel V4.6
+# Nox IPTV Cloud Panel V4.7
 
-New:
-- Browser player inside /watch
-- MPEG-TS same-origin stream proxy /watch/stream/<id>
-- Click channel -> video opens in browser player on PC/Android
-- VLC remains fallback
-- Import Clients from backup JSON
-- Restore full backup
-- Backup All
+Optimized /watch:
+- gevent async gunicorn worker
+- faster stream connect timeout
+- smaller chunks for faster first video
+- Stop button
+- cleaner Retry
+- cache-buster for stream proxy
+- /warm endpoint for keepalive
 
-Important:
-TS/MPEGTS through browser now uses Render bandwidth while watching.
+Use UptimeRobot:
+https://noxiptv.onrender.com/health
+and optionally:
+https://noxiptv.onrender.com/warm
+
+Render Free can still be slow if many clients watch at once.
