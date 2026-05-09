@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.7
+NOX IPTV CLOUD PANEL V4.8
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -390,7 +390,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.7</title>
+  <title>Nox IPTV Panel V4.8</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -424,7 +424,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4.7</h1>
+      <h1>Nox IPTV Panel V4.8</h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -945,7 +945,7 @@ def backup_all():
     if not login_required():
         return redirect("/login")
     data = {
-        "version": "v4.7",
+        "version": "v4.8",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
@@ -1145,10 +1145,13 @@ def watch_home():
         <p>
           <button class="btn" onclick="retryCurrent()">Retry</button>
           <button class="btn gray" onclick="stopPlayer()">Stop</button>
-          <a class="btn gray" id="openVlc" href="#">Open in VLC</a>
+          <a class="btn gray" id="openVlcAndroid" href="#">Open VLC Android</a>
+          <a class="btn gray" id="openVlcClassic" href="#">Open VLC Classic</a>
+          <a class="btn gray" id="openDirect" href="#" target="_blank">Open Direct</a>
           <button class="btn gray" onclick="copyUrl()">Copy URL</button>
+          <button class="btn gray" onclick="testChannel()">Test</button>
         </p>
-        <p class="hint" id="hint">Kliko kanal. Nëse ngarkon ngadalë, prit 5-10 sekonda ose kliko Retry.</p>
+        <p class="hint" id="hint">Kliko kanal. Nëse browseri vonon, përdor Retry. Për telefon Android përdor Open VLC Android.</p>
       </div>
       <div class="grid" id="channels"></div>
     </div>
@@ -1162,8 +1165,40 @@ def watch_home():
         currentChannel = ch;
         currentUrl = ch.url;
         document.getElementById("now").innerText = ch.name + " — " + ch.group;
-        document.getElementById("openVlc").href = "vlc://" + ch.url;
+        updateExternalLinks(ch.url);
         startPlayer(ch);
+      }}
+
+      function updateExternalLinks(url) {{
+        const clean = url.replace(/^https?:\/\//, "");
+        const androidIntent = "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
+        const vlcClassic = "vlc://" + url;
+        const a1 = document.getElementById("openVlcAndroid");
+        const a2 = document.getElementById("openVlcClassic");
+        const a3 = document.getElementById("openDirect");
+        if (a1) a1.href = androidIntent;
+        if (a2) a2.href = vlcClassic;
+        if (a3) a3.href = url;
+      }}
+
+      async function testChannel() {{
+        if (!currentChannel) {{
+          alert("Zgjedh një kanal së pari.");
+          return;
+        }}
+        const hint = document.getElementById("hint");
+        hint.innerText = "Duke testuar kanalin...";
+        try {{
+          const res = await fetch("/watch/test/" + currentChannel.i + "?t=" + Date.now());
+          const data = await res.json();
+          if (data.ok) {{
+            hint.innerText = "TEST OK: HTTP " + data.status_code + " | " + data.content_type + " | " + data.bytes + " bytes";
+          }} else {{
+            hint.innerText = "TEST PROBLEM: " + (data.error || ("HTTP " + data.status_code));
+          }}
+        }} catch(e) {{
+          hint.innerText = "TEST ERROR: " + e;
+        }}
       }}
 
       function stopPlayer() {{
@@ -1203,7 +1238,7 @@ def watch_home():
           if (token === playToken) hint.innerText = "Live tani.";
         }};
         video.onerror = function() {{
-          if (token === playToken) hint.innerText = "Nuk u hap në browser. Provo Retry ose Open in VLC.";
+          if (token === playToken) hint.innerText = "Nuk u hap në browser. Provo Retry ose Open VLC Android/Classic.";
         }};
 
         if (lower.includes(".m3u8")) {{
@@ -1262,12 +1297,12 @@ def watch_home():
             window.tsPlayer.play();
             if (token === playToken) hint.innerText = "Duke hapur MPEG-TS në browser...";
           }} catch(e) {{
-            if (token === playToken) hint.innerText = "MPEG-TS nuk u hap. Provo Open in VLC.";
+            if (token === playToken) hint.innerText = "MPEG-TS nuk u hap. Provo Open VLC Android/Classic.";
           }}
         }} else {{
           video.src = proxyUrl;
           video.play().catch(() => {{
-            if (token === playToken) hint.innerText = "Browseri nuk e suporton këtë format. Provo Open in VLC.";
+            if (token === playToken) hint.innerText = "Browseri nuk e suporton këtë format. Provo Open VLC Android/Classic.";
           }});
         }}
       }}
@@ -1316,6 +1351,73 @@ def watch_home():
     return client_page(body)
 
 
+
+
+
+
+# ---------------- Channel Test / Link Debug ----------------
+
+@app.route("/watch/test/<int:channel_id>")
+def watch_test_channel(channel_id):
+    if not client_login_required():
+        return {"ok": False, "error": "Not logged in"}, 401
+
+    slug = session["client_slug"]
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return {"ok": False, "error": "Channel not found"}, 404
+
+        stream_url = items[channel_id]["url"]
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Range": "bytes=0-65535",
+            "Connection": "close",
+        }
+        r = requests.get(stream_url, headers=headers, stream=True, timeout=(6, 12), allow_redirects=True)
+        total = 0
+        for chunk in r.iter_content(chunk_size=16384):
+            if chunk:
+                total += len(chunk)
+            if total >= 32768:
+                break
+        try:
+            r.close()
+        except Exception:
+            pass
+
+        return {
+            "ok": 200 <= r.status_code < 400 and total > 0,
+            "status_code": r.status_code,
+            "content_type": r.headers.get("Content-Type", "unknown"),
+            "bytes": total,
+            "url_type": "m3u8" if ".m3u8" in stream_url.lower() else "ts/mpegts",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+
+
+@app.route("/watch/links/<int:channel_id>")
+def watch_links(channel_id):
+    if not client_login_required():
+        return {"ok": False, "error": "Not logged in"}, 401
+    slug = session["client_slug"]
+    text = get_playlist_for_client(slug, force_refresh=False)
+    items = parse_m3u_items(text)
+    if channel_id < 0 or channel_id >= len(items):
+        return {"ok": False, "error": "Channel not found"}, 404
+    u = items[channel_id]["url"]
+    clean = re.sub(r"^https?://", "", u)
+    return {
+        "ok": True,
+        "direct": u,
+        "vlc_classic": "vlc://" + u,
+        "android_intent": "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end",
+        "proxy": url_for("watch_stream_proxy", channel_id=channel_id, _external=True),
+    }
 
 
 # ---------------- Browser Stream Proxy for Client Portal ----------------
@@ -1450,7 +1552,7 @@ def health():
     return {
         "ok": True,
         "service": "noxiptv",
-        "version": "v4.7",
+        "version": "v4.8",
         "time": datetime.now().isoformat(),
         "clients": len(load_clients()),
         "template_channels": get_template_text().count("#EXTINF"),
