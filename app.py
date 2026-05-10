@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V6.3
+NOX IPTV CLOUD PANEL V6.4
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -41,8 +41,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V6.3"
-API_VERSION = "v6.3"
+APP_VERSION = "V6.4"
+API_VERSION = "v6.4"
 
 
 HEADERS = {
@@ -627,7 +627,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.3</title>
+  <title>NOX IPTV V6.4</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -661,7 +661,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style='font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;'>V6.3</span> V6.3 V6.3</h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V6.4</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -699,7 +699,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV Player</title>
+  <title>NOX IPTV V6.4</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1552,10 +1552,12 @@ def watch_home():
           }}
       }}
 
-      function openAndroidVlcNow() {
+      function openAndroidVlcNow() {{
         const a = document.getElementById("vlcAndroid1");
-        if (a && a.href && a.href !== "#") window.location.href = a.href;
-      }
+        if (a && a.href && a.href !== "#") {{
+          window.location.href = a.href;
+        }}
+      }}
 
       function updateVlc(ch) {{
         const encoded = encodeURIComponent(ch.url);
