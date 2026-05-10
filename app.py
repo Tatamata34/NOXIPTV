@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V6.7
+NOX IPTV CLOUD PANEL V7.0
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -41,8 +41,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V6.7"
-API_VERSION = "v6.7"
+APP_VERSION = "V7.0"
+API_VERSION = "v7.0"
 
 
 HEADERS = {
@@ -381,6 +381,7 @@ def template_stats(text):
 
 
 def replace_stream_credentials_in_url(url, new_base, username, password, output="ts"):
+    # V7 stable: direct Xtream URL, no forced /live/*.m3u8
     new_base = normalize_base(new_base)
     old = urlparse(url)
     nb = urlparse(new_base)
@@ -617,7 +618,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.7</title>
+  <title>NOX IPTV V7.0</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -651,7 +652,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V6.7</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.0</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -689,7 +690,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.7</title>
+  <title>NOX IPTV V7.0</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1378,8 +1379,12 @@ def watch_login():
 
 
 
+
+
+
 @app.route("/c/<slug>/<int:channel_id>.m3u")
 def single_channel_playlist(slug, channel_id):
+    """Clean single-channel M3U for VLC."""
     try:
         text = get_playlist_for_client(slug, force_refresh=False)
         items = parse_m3u_items(text)
@@ -1408,19 +1413,45 @@ def single_channel_playlist(slug, channel_id):
 
 @app.route("/vlc/iphone/<slug>/<int:channel_id>")
 def open_vlc_iphone(slug, channel_id):
-    single_m3u = request.url_root.rstrip("/") + url_for("single_channel_playlist", slug=slug, channel_id=channel_id)
-    encoded = requests.utils.quote(single_m3u, safe="")
-    return redirect("vlc-x-callback://x-callback-url/stream?url=" + encoded)
+    """iPhone VLC launcher. Primary uses raw direct URL; fallback param mode=m3u uses playlist."""
+    mode = request.args.get("mode", "direct")
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("Channel not found", status=404)
+        direct_url = items[channel_id]["url"]
+        if mode == "m3u":
+            target = request.url_root.rstrip("/") + url_for("single_channel_playlist", slug=slug, channel_id=channel_id)
+        else:
+            target = direct_url
+        encoded = requests.utils.quote(target, safe="")
+        return redirect("vlc-x-callback://x-callback-url/stream?url=" + encoded)
+    except Exception as e:
+        return Response(f"VLC iPhone error: {e}", status=500)
 
 
 @app.route("/vlc/android/<slug>/<int:channel_id>")
 def open_vlc_android(slug, channel_id):
-    single_m3u = request.url_root.rstrip("/") + url_for("single_channel_playlist", slug=slug, channel_id=channel_id)
-    p = urlparse(single_m3u)
-    clean = single_m3u.replace("https://", "").replace("http://", "")
-    scheme = p.scheme or "https"
-    intent = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=audio/x-mpegurl;S.title=NOXIPTV;end"
-    return redirect(intent)
+    """Android VLC launcher. Primary uses raw direct URL; fallback param mode=m3u uses playlist."""
+    mode = request.args.get("mode", "direct")
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("Channel not found", status=404)
+        direct_url = items[channel_id]["url"]
+        if mode == "m3u":
+            target = request.url_root.rstrip("/") + url_for("single_channel_playlist", slug=slug, channel_id=channel_id)
+        else:
+            target = direct_url
+        p = urlparse(target)
+        clean = target.replace("https://", "").replace("http://", "")
+        scheme = p.scheme or "http"
+        intent = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end"
+        return redirect(intent)
+    except Exception as e:
+        return Response(f"VLC Android error: {e}", status=500)
 
 
 @app.route("/watch/debug")
@@ -1428,23 +1459,21 @@ def watch_debug():
     if not client_login_required():
         return redirect("/watch")
     slug = session["client_slug"]
-    try:
-        text = get_playlist_for_client(slug, force_refresh=True)
-        items = parse_m3u_items(text)[:30]
-        rows = ""
-        for idx, it in enumerate(items):
-            m3u = request.url_root.rstrip("/") + url_for("single_channel_playlist", slug=slug, channel_id=idx)
-            rows += f"<tr><td>{idx}</td><td>{it.get('name')}</td><td><code>{it.get('url')}</code><br><small>M3U: <code>{m3u}</code></small></td></tr>"
-        return client_page(f"""
-        <div class="top"><h2>NOX IPTV Debug</h2></div>
-        <div class="wrap"><div class="player">
-          <h3>First 30 generated URLs</h3>
-          <table>{rows}</table>
-          <p><a class="btn" href="/watch/home">Back</a></p>
-        </div></div>
-        """)
-    except Exception as e:
-        return client_page(f"<div class='top'><h2>Debug</h2></div><div class='wrap'><div class='player'>Error: {e}</div></div>")
+    text = get_playlist_for_client(slug, force_refresh=True)
+    items = parse_m3u_items(text)[:30]
+    rows = ""
+    for idx, it in enumerate(items):
+        direct = it.get("url")
+        iphone = request.url_root.rstrip("/") + url_for("open_vlc_iphone", slug=slug, channel_id=idx)
+        android = request.url_root.rstrip("/") + url_for("open_vlc_android", slug=slug, channel_id=idx)
+        rows += f"<tr><td>{idx}</td><td>{it.get('name')}</td><td><code>{direct}</code><br><small>iPhone: <code>{iphone}</code></small><br><small>Android: <code>{android}</code></small></td></tr>"
+    return client_page(f"""
+    <div class="top"><h2>NOX IPTV Debug</h2></div>
+    <div class="wrap"><div class="player">
+    <h3>Generated URLs</h3><table>{rows}</table>
+    <p><a class="btn" href="/watch/home">Back</a></p>
+    </div></div>
+    """)
 
 
 @app.route("/watch/logout")
@@ -1481,25 +1510,27 @@ def watch_home():
     data_json = json.dumps(safe_items, ensure_ascii=False)
     body = f"""
     <style>
-      body {{ background:#07111f !important; color:#e5e7eb !important; }}
-      .top {{ background:linear-gradient(135deg,#07111f,#111827,#1e3a8a) !important; padding:18px !important; }}
+      body {{ background:#050b14 !important; color:#e5e7eb !important; }}
+      .top {{ background:linear-gradient(135deg,#050b14,#0f172a,#1d4ed8) !important; padding:18px !important; }}
       .brandrow {{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }}
-      .brandrow img {{ width:52px; height:52px; border-radius:16px; box-shadow:0 10px 30px #0007; }}
-      .brandtitle {{ font-size:25px; font-weight:900; letter-spacing:.3px; }}
-      .versionpill {{ display:inline-block; font-size:12px; background:#2563eb; padding:3px 8px; border-radius:999px; margin-left:8px; }}
-      .watch-shell {{ display:grid; grid-template-columns:250px minmax(0,1fr); gap:14px; }}
-      .side {{ background:rgba(15,23,42,.96); border:1px solid #1f2937; border-radius:22px; padding:14px; height:fit-content; position:sticky; top:92px; box-shadow:0 12px 35px #0005; }}
+      .brandrow img {{ width:54px; height:54px; border-radius:17px; box-shadow:0 10px 30px #0008; }}
+      .brandtitle {{ font-size:26px; font-weight:900; }}
+      .versionpill {{ font-size:12px; background:#2563eb; padding:3px 8px; border-radius:999px; margin-left:8px; }}
+      .watch-shell {{ display:grid; grid-template-columns:260px minmax(0,1fr); gap:14px; }}
+      .side {{ background:rgba(15,23,42,.97); border:1px solid #1f2937; border-radius:24px; padding:14px; height:fit-content; position:sticky; top:92px; box-shadow:0 12px 35px #0007; }}
       .cat {{ display:block; width:100%; margin:7px 0; text-align:left; background:#1f2937; border-radius:14px; }}
       .cat.active {{ background:#2563eb; }}
-      .playerbox {{ background:rgba(15,23,42,.96); border:1px solid #1f2937; border-radius:24px; padding:14px; margin-bottom:14px; box-shadow:0 12px 40px #0006; }}
+      .playerbox {{ background:rgba(15,23,42,.97); border:1px solid #1f2937; border-radius:26px; padding:14px; margin-bottom:14px; box-shadow:0 12px 45px #0007; }}
       .players.one {{ display:grid; grid-template-columns:1fr; gap:12px; }}
       .players.two {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
-      .screen {{ background:#020617; border:1px solid #1f2937; border-radius:20px; overflow:hidden; }}
-      video {{ width:100%; height:360px; background:#000; display:block; }}
+      .screen {{ background:#020617; border:1px solid #1f2937; border-radius:22px; overflow:hidden; }}
+      video {{ width:100%; height:370px; background:#000; display:block; }}
       .screenbar {{ padding:11px; display:flex; justify-content:space-between; gap:8px; background:#111827; align-items:center; }}
       .badge {{ padding:5px 10px; border-radius:999px; background:#475569; font-size:12px; }}
       .badge.on {{ background:#16a34a; }} .badge.fail {{ background:#dc2626; }}
       .controls {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }}
+      .vlcbtn {{ display:inline-flex; align-items:center; gap:7px; font-size:15px; }}
+      .vlcico {{ width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:7px; background:#ffffff22; }}
       .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:11px; }}
       .ch {{ background:#111827; border:1px solid #1f2937; border-radius:18px; padding:11px; cursor:pointer; min-height:78px; transition:.15s; }}
       .ch:hover {{ border-color:#2563eb; transform:translateY(-1px); }}
@@ -1512,9 +1543,8 @@ def watch_home():
       @media(max-width:850px) {{
         .watch-shell {{ grid-template-columns:1fr; }}
         .players.two {{ grid-template-columns:1fr; }}
-        video {{ height:245px; }}
+        video {{ height:250px; }}
         .side {{ position:relative; top:0; }}
-        .brandtitle {{ font-size:22px; }}
       }}
     </style>
 
@@ -1536,7 +1566,7 @@ def watch_home():
         <button class="btn gray cat" onclick="setTarget(1)">Target Screen 1</button>
         <button class="btn gray cat" onclick="setTarget(2)">Target Screen 2</button>
         <button class="btn gray cat" onclick="toggleTwo()">1 / 2 Ekrane</button>
-        <div class="helpbox">Nëse iPhone nuk e hap disa kanale në browser, përdor VLC iPhone. Android/PC përdorin browser ose VLC Android.</div>
+        <div class="helpbox">Primare: iPhone. Para VLC, player-i ndalet automatikisht për ta liruar lidhjen.</div>
       </div>
 
       <div>
@@ -1549,11 +1579,11 @@ def watch_home():
             <button class="btn" onclick="retryCurrent()">Retry</button>
             <button class="btn gray" onclick="stopTarget()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
-            <a class="btn gray" id="vlcIphone" href="#">Open VLC iPhone</a>
-            <a class="btn gray" id="vlcAndroid1" href="#">Open VLC Android</a>
-          <a class="btn gray" href="/watch/debug">Debug</a>
+            <button class="btn gray vlcbtn" onclick="openVlc('iphone')"><span class="vlcico">🎥</span><span class="vlcico"></span> VLC iPhone</button>
+            <button class="btn gray vlcbtn" onclick="openVlc('android')"><span class="vlcico">🎥</span><span class="vlcico">🤖</span> VLC Android</button>
+            <a class="btn gray" href="/watch/debug">Debug</a>
           </div>
-          <p class="hint" id="hint">Kliko kanal. Direct TS është kthyer si versionet që punonin; VLC mbetet fallback.</p>
+          <p class="hint" id="hint">Kliko kanal. Browser provon në ekran; VLC ndalon browser-in para hapjes.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -1596,39 +1626,42 @@ def watch_home():
       function markRecent(ch) {{ let r=getRecent().filter(x=>x!==ch.i); r.unshift(ch.i); setRecent(r); }}
       function toggleFavorite() {{ const ch=current[target]; if(!ch)return; let f=getFavs(); if(f.includes(ch.i))f=f.filter(x=>x!==ch.i); else f.push(ch.i); setFavs(f); render(); }}
 
-      function copyCurrentUrl() {{
-          try {{
-              let ch = current[target];
- 
-              if (!ch) {{
-                  alert("Zgjedh kanal së pari.");
-                  return;
-              }}
- 
-              navigator.clipboard.writeText(ch.url);
-              alert("URL u kopjua.");
-          }} catch(e) {{
-              console.log(e);
-          }}
-      }}
-
-
-      function updateVlc(ch) {{
-        const iphone = document.getElementById("vlcIphone");
-        const android = document.getElementById("vlcAndroid1");
-        if (iphone) {{
-          iphone.href = "/vlc/iphone/{slug}/" + ch.i;
-          iphone.target = "_self";
-        }}
-        if (android) {{
-          android.href = "/vlc/android/{slug}/" + ch.i;
-          android.target = "_self";
-        }}
-      }}
-
       function setBadge(n, text, cls) {{
         const b=document.getElementById("badge"+n); b.className="badge "+(cls||""); b.innerText=text;
       }}
+
+      function stopScreen(n) {{
+        manualStop[n]=true;
+        if(watchdog[n]){{clearInterval(watchdog[n]);watchdog[n]=null;}}
+        const v=document.getElementById("video"+n);
+        if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}hlsMap[n]=null;}}
+        if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}tsMap[n]=null;}}
+        try{{v.pause();}}catch(e){{}} v.removeAttribute("src"); v.load(); setBadge(n,"STOP","");
+      }}
+
+      function stopAllScreens() {{
+        stopScreen(1);
+        stopScreen(2);
+      }}
+
+      function openVlc(kind) {{
+        const ch = current[target];
+        if(!ch) {{
+          alert("Zgjedh një kanal së pari.");
+          return;
+        }}
+        document.getElementById("hint").innerText = "Po ndalet browser player dhe po hapet VLC...";
+        stopAllScreens();
+        setTimeout(()=>{{
+          if(kind === "iphone") {{
+            window.location.href = "/vlc/iphone/{slug}/" + ch.i;
+          }} else {{
+            window.location.href = "/vlc/android/{slug}/" + ch.i;
+          }}
+        }}, 900);
+      }}
+
+      function stopTarget() {{ stopScreen(target); }}
 
       function startWatchdog(n) {{
         if(watchdog[n]) clearInterval(watchdog[n]);
@@ -1641,25 +1674,14 @@ def watch_home():
           const ended=v.ended || (isFinite(v.duration) && v.duration>0 && now>=v.duration-0.4);
           if(stuck || ended) {{
             reconnects[n]+=1; setBadge(n,"RELOAD "+reconnects[n],"");
-            if(reconnects[n]<=6) playBrowser(ch,n,true); else setBadge(n,"VLC","fail");
+            if(reconnects[n]<=4) playBrowser(ch,n,true); else setBadge(n,"VLC","fail");
           }}
           lastTime[n]=now;
-        }}, 7000);
+        }}, 8000);
       }}
-
-      function stopScreen(n) {{
-        manualStop[n]=true;
-        if(watchdog[n]){{clearInterval(watchdog[n]);watchdog[n]=null;}}
-        const v=document.getElementById("video"+n);
-        if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}hlsMap[n]=null;}}
-        if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}tsMap[n]=null;}}
-        try{{v.pause();}}catch(e){{}} v.removeAttribute("src"); v.load(); setBadge(n,"STOP","");
-      }}
-
-      function stopTarget() {{ stopScreen(target); }}
 
       function playChannel(ch) {{
-        current[target]=ch; markRecent(ch); updateVlc(ch); reconnects[target]=0; manualStop[target]=false;
+        current[target]=ch; markRecent(ch); reconnects[target]=0; manualStop[target]=false;
         document.getElementById("now"+target).innerText=ch.name;
         setBadge(target,"LOAD","");
         try{{navigator.sendBeacon("/watch/log", JSON.stringify({{channel:ch.name,id:ch.i,event:"channel_click"}}));}}catch(e){{}}
@@ -1678,7 +1700,7 @@ def watch_home():
         v.onpause=function(){{if(!manualStop[n]&&current[n])setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.paused){{try{{v.play();}}catch(e){{}} setTimeout(()=>{{if(v.paused)playBrowser(current[n],n,true);}},1200);}}}},800);}};
         v.onended=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
         v.onstalled=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
-        v.onerror=function(){{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Browser nuk e hapi. Përdor VLC."; }};
+        v.onerror=function(){{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Browser nuk e hapi. Provo VLC."; }};
 
         if(src.includes(".m3u8") && Hls.isSupported()) {{
           hlsMap[n]=new Hls({{lowLatencyMode:true,liveSyncDurationCount:3,maxBufferLength:45,backBufferLength:15,enableWorker:true,fragLoadingTimeOut:20000,manifestLoadingTimeOut:12000}});
