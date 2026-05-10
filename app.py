@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.8
+NOX IPTV CLOUD PANEL V7.9
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
 """
 
 import json
+import base64
 import os
 import re
 import socket
@@ -71,8 +72,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.8"
-API_VERSION = "v7.8"
+APP_VERSION = "V7.9"
+API_VERSION = "v7.9"
 
 
 HEADERS = {
@@ -652,7 +653,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.8</title>
+  <title>NOX IPTV V7.9</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -686,7 +687,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.8</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.9</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -725,7 +726,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.8</title>
+  <title>NOX IPTV V7.9</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1863,6 +1864,139 @@ def build_proxy_playlist_for_client(slug):
     return "\n".join(lines) + "\n"
 
 
+
+def b64url_encode_text(s):
+    return base64.urlsafe_b64encode(s.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def b64url_decode_text(s):
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode((s + pad).encode("ascii")).decode("utf-8")
+
+
+def make_hls_candidate_url(stream_url):
+    """
+    Try common Xtream HLS form:
+    http://host/user/pass/id  -> http://host/live/user/pass/id.m3u8
+    http://host/live/user/pass/id.ts -> http://host/live/user/pass/id.m3u8
+    """
+    try:
+        p = urlparse(stream_url)
+        parts = [x for x in p.path.split("/") if x]
+        if len(parts) >= 4 and parts[0] == "live":
+            user, pwd, sid = parts[1], parts[2], parts[3]
+            sid = sid.replace(".ts", "").replace(".m3u8", "")
+            return urlunparse((p.scheme, p.netloc, f"/live/{user}/{pwd}/{sid}.m3u8", "", "", ""))
+        if len(parts) >= 3:
+            user, pwd, sid = parts[0], parts[1], parts[2]
+            sid = sid.replace(".ts", "").replace(".m3u8", "")
+            return urlunparse((p.scheme, p.netloc, f"/live/{user}/{pwd}/{sid}.m3u8", "", "", ""))
+    except Exception:
+        pass
+    return stream_url
+
+
+@app.route("/browser/hls/<slug>/<int:channel_id>")
+def browser_hls_manifest(slug, channel_id):
+    """
+    Browser-only HLS manifest proxy/rewrite.
+    This helps iPhone Safari when provider supports HLS but original list gives TS.
+    """
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="application/vnd.apple.mpegurl", status=404)
+
+        original = items[channel_id]["url"]
+        candidates = []
+        if ".m3u8" in original.lower():
+            candidates.append(original)
+        candidates.append(make_hls_candidate_url(original))
+        candidates.append(original)
+
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+        }
+
+        last_error = ""
+        resp = None
+        for cand in candidates:
+            try:
+                r = requests.get(cand, headers=headers, timeout=(8, 16), allow_redirects=True)
+                sample = r.text[:500] if r.text else ""
+                if r.status_code < 400 and "#EXTM3U" in sample:
+                    resp = r
+                    break
+                last_error = f"{cand} -> {r.status_code}"
+            except Exception as e:
+                last_error = f"{cand} -> {e}"
+
+        if resp is None:
+            return Response(f"#EXTM3U\n# ERROR: HLS not available. {last_error}\n", mimetype="application/vnd.apple.mpegurl", status=502)
+
+        base_url = resp.url
+        out = []
+        for line in resp.text.splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):
+                # Also rewrite URI="key" attributes if present
+                if 'URI="' in line:
+                    def repl_key(m):
+                        key_url = urljoin(base_url, m.group(1))
+                        return 'URI="' + url_for("browser_hls_asset", encoded=b64url_encode_text(key_url)) + '"'
+                    line = re.sub(r'URI="([^"]+)"', repl_key, line)
+                out.append(line)
+            else:
+                abs_url = urljoin(base_url, s)
+                out.append(url_for("browser_hls_asset", encoded=b64url_encode_text(abs_url)))
+        return Response(
+            "\n".join(out) + "\n",
+            mimetype="application/vnd.apple.mpegurl",
+            headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*"}
+        )
+    except Exception as e:
+        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="application/vnd.apple.mpegurl", status=500)
+
+
+@app.route("/browser/hls-asset/<encoded>")
+def browser_hls_asset(encoded):
+    """
+    HLS segment/key proxy.
+    """
+    try:
+        asset_url = b64url_decode_text(encoded)
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+        }
+        upstream = requests.get(asset_url, headers=headers, stream=True, timeout=(8, None), allow_redirects=True)
+        content_type = upstream.headers.get("Content-Type", "video/mp2t")
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    upstream.close()
+                except Exception:
+                    pass
+        return Response(
+            stream_with_context(generate()),
+            mimetype=content_type,
+            headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*", "X-Accel-Buffering": "no"},
+            direct_passthrough=True,
+        )
+    except Exception as e:
+        return Response(f"HLS asset error: {e}", status=500)
+
+
 @app.route("/proxy/<slug>/<int:channel_id>")
 def proxy_channel(slug, channel_id):
     """
@@ -2197,7 +2331,7 @@ def watch_home():
             <button class="btn gray vlcbtn" onclick="openVlc('android')"><span class="vlcico">🎥</span><span class="vlcico">🤖</span> VLC Android</button>
             <a class="btn gray" href="/watch/debug">Debug</a>
           </div>
-          <p class="hint" id="hint">Kliko kanal. VLC hap automatikisht metodën që u konfirmua: iPhone Method 2, Android Intent Video.</p>
+          <p class="hint" id="hint">Kliko kanal. Browser provon HLS proxy → TS proxy → direct fallback.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -2309,33 +2443,88 @@ def watch_home():
         manualStop[n]=false;
         if(watchdog[n]){{clearInterval(watchdog[n]);watchdog[n]=null;}}
         stopScreen(n); manualStop[n]=false;
-        const v=document.getElementById("video"+n), lower=ch.url.toLowerCase();
-        const src=lower.includes(".m3u8") ? ch.url : "/watch/stream/"+ch.i+"?t="+Date.now();
+
+        const v=document.getElementById("video"+n);
+        const lower=ch.url.toLowerCase();
 
         v.onplaying=function(){{setBadge(n,"LIVE","on");document.getElementById("hint").innerText="Live në browser.";startWatchdog(n);}};
         v.onpause=function(){{if(!manualStop[n]&&current[n])setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.paused){{try{{v.play();}}catch(e){{}} setTimeout(()=>{{if(v.paused)playBrowser(current[n],n,true);}},1200);}}}},800);}};
         v.onended=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
         v.onstalled=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
-        v.onerror=function(){{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Browser nuk e hapi. Provo VLC."; }};
+        v.onerror=function(){{setBadge(n,"TRY",""); tryBrowserHlsProxy(ch,n); }};
 
-        if(src.includes(".m3u8") && Hls.isSupported()) {{
-          hlsMap[n]=new Hls({{lowLatencyMode:true,liveSyncDurationCount:3,maxBufferLength:45,backBufferLength:15,enableWorker:true,fragLoadingTimeOut:20000,manifestLoadingTimeOut:12000}});
-          hlsMap[n].loadSource(src); hlsMap[n].attachMedia(v);
-          hlsMap[n].on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>{{}}));
-          hlsMap[n].on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal)playMpegts("/watch/stream/"+ch.i+"?t="+Date.now(),n);}});
-        }} else playMpegts(src,n);
+        // Browser Smart Engine:
+        // 1) Native/direct HLS if channel is already .m3u8
+        // 2) NOX HLS candidate proxy (helps iPhone if provider supports hidden HLS)
+        // 3) MPEGTS proxy with mpegts.js (best for Android/PC)
+        // 4) direct video fallback
+        if(lower.includes(".m3u8")) {{
+          playHlsSource(ch.url, ch, n, function(){{ tryBrowserHlsProxy(ch,n); }});
+        }} else {{
+          tryBrowserHlsProxy(ch,n);
+        }}
+      }}
+
+      function playHlsSource(src,ch,n,onFail) {{
+        const v=document.getElementById("video"+n);
+        setBadge(n,"HLS","");
+        if(Hls.isSupported()) {{
+          try {{
+            if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}}}
+            hlsMap[n]=new Hls({{lowLatencyMode:true,liveSyncDurationCount:3,maxBufferLength:45,backBufferLength:15,enableWorker:true,fragLoadingTimeOut:20000,manifestLoadingTimeOut:12000}});
+            let parsed=false;
+            hlsMap[n].loadSource(src);
+            hlsMap[n].attachMedia(v);
+            hlsMap[n].on(Hls.Events.MANIFEST_PARSED,()=>{{parsed=true;v.play().catch(()=>{{ if(onFail)onFail(); }});}});
+            hlsMap[n].on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal && onFail)onFail();}});
+            setTimeout(()=>{{if(!manualStop[n]&&current[n]&&!parsed&&onFail)onFail();}},9000);
+          }} catch(e) {{ if(onFail)onFail(); }}
+        }} else if(v.canPlayType("application/vnd.apple.mpegurl")) {{
+          v.src=src;
+          v.play().catch(()=>{{ if(onFail)onFail(); }});
+          setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.readyState<2&&onFail)onFail();}},9000);
+        }} else {{
+          if(onFail)onFail();
+        }}
+      }}
+
+      function tryBrowserHlsProxy(ch,n) {{
+        if(manualStop[n]) return;
+        const hlsProxy="/browser/hls/{slug}/"+ch.i+"?t="+Date.now();
+        document.getElementById("hint").innerText="Po provohet HLS proxy për browser...";
+        playHlsSource(hlsProxy,ch,n,function(){{ playMpegts("/proxy/{slug}/"+ch.i+"?t="+Date.now(),n); }});
       }}
 
       function playMpegts(src,n) {{
         const v=document.getElementById("video"+n);
+        setBadge(n,"TS","");
         if(window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
           try {{
             if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}}}
-            tsMap[n]=mpegts.createPlayer({{type:"mpegts",isLive:true,url:src,cors:false,enableStashBuffer:true,stashInitialSize:1024,lazyLoad:false,autoCleanupSourceBuffer:true,autoCleanupMaxBackwardDuration:30,autoCleanupMinBackwardDuration:10,fixAudioTimestampGap:true}});
-            tsMap[n].on(mpegts.Events.ERROR,function(){{ if(!manualStop[n]&&current[n]) setTimeout(()=>playBrowser(current[n],n,true),1200); }});
-            tsMap[n].attachMediaElement(v); tsMap[n].load(); tsMap[n].play();
-          }} catch(e) {{ v.src=src; v.play().catch(()=>setBadge(n,"VLC","fail")); }}
-        }} else {{ v.src=src; v.play().catch(()=>setBadge(n,"VLC","fail")); }}
+            tsMap[n]=mpegts.createPlayer({{type:"mpegts",isLive:true,url:src,cors:false,enableStashBuffer:true,stashInitialSize:1536,lazyLoad:false,autoCleanupSourceBuffer:true,autoCleanupMaxBackwardDuration:30,autoCleanupMinBackwardDuration:10,fixAudioTimestampGap:true}});
+            tsMap[n].on(mpegts.Events.ERROR,function(){{ 
+              if(!manualStop[n]&&current[n]) {{
+                setBadge(n,"RETRY","");
+                setTimeout(()=>tryDirectVideo(current[n],n),1000);
+              }}
+            }});
+            tsMap[n].attachMediaElement(v);
+            tsMap[n].load();
+            tsMap[n].play();
+            setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.readyState<2)tryDirectVideo(current[n],n);}},11000);
+          }} catch(e) {{ tryDirectVideo(current[n],n); }}
+        }} else {{
+          tryDirectVideo(current[n],n);
+        }}
+      }}
+
+      function tryDirectVideo(ch,n) {{
+        if(!ch || manualStop[n]) return;
+        const v=document.getElementById("video"+n);
+        setBadge(n,"DIRECT","");
+        v.src=ch.url;
+        v.play().catch(()=>{{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Browser nuk e dekodoi këtë kanal. Provo VLC."; }});
+        setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.readyState<2){{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Ky kanal nuk u hap në browser. Provo VLC.";}}}},9000);
       }}
 
       function retryCurrent() {{ if(current[target]){{manualStop[target]=false;reconnects[target]=0;playBrowser(current[target],target);}} }}
