@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.3
+NOX IPTV CLOUD PANEL V7.5
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -71,8 +71,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.3"
-API_VERSION = "v7.3"
+APP_VERSION = "V7.5"
+API_VERSION = "v7.5"
 
 
 HEADERS = {
@@ -652,7 +652,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.3</title>
+  <title>NOX IPTV V7.5</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -686,7 +686,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.3</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.5</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -725,7 +725,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.3</title>
+  <title>NOX IPTV V7.5</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1873,32 +1873,95 @@ def playlist_alias_for_vlc(slug):
 @app.route("/vlc/iphone/<slug>/<int:channel_id>")
 @app.route("/vlc/iphone/<slug>")
 def open_vlc_iphone(slug, channel_id=None):
-    """
-    iPhone VLC launcher.
-    Always opens the COMPLETE client playlist, not a single channel.
-    """
     playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
-    encoded = requests.utils.quote(playlist_url, safe="")
-    return redirect("vlc-x-callback://x-callback-url/stream?url=" + encoded)
+    enc = requests.utils.quote(playlist_url, safe="")
+    method_a = "vlc://x-callback-url/stream?url=" + enc
+    method_b = "vlc-x-callback://x-callback-url/stream?url=" + enc
+    method_c = "vlc://" + enc
+    return client_page(f"""
+    <div class="top"><h2>NOX IPTV VLC iPhone Safe Mode</h2></div>
+    <div class="wrap">
+      <div class="player">
+        <h3>Metoda më e sigurt për iPhone</h3>
+        <p class="hint">Nëse VLC nuk e pranon hapjen direkte, kjo metodë e kopjon linkun e listës komplet dhe hap VLC. Pastaj në VLC: Network → Open Network Stream → Paste.</p>
+        <p>
+          <button class="btn" onclick="safeOpen()">📋 Copy playlist + Open VLC</button>
+          <a class="btn gray" href="{playlist_url}">Open playlist file</a>
+          <a class="btn gray" href="/watch/home">Back</a>
+        </p>
+        <hr>
+        <h3>Metoda direkte, provo nëse do</h3>
+        <p>
+          <a class="btn gray" href="{method_a}">Method 1</a>
+          <a class="btn gray" href="{method_b}">Method 2</a>
+          <a class="btn gray" href="{method_c}">Method 3</a>
+        </p>
+        <p class="hint">Playlist URL:<br><code id="plist">{playlist_url}</code></p>
+      </div>
+    </div>
+    <script>
+      const playlistUrl = "{playlist_url}";
+      function safeOpen() {{
+        navigator.clipboard.writeText(playlistUrl).catch(()=>{{}});
+        setTimeout(function() {{
+          window.location.href = "vlc://";
+        }}, 250);
+      }}
+    </script>
+    """)
 
 
 @app.route("/vlc/android/<slug>/<int:channel_id>")
 @app.route("/vlc/android/<slug>")
 def open_vlc_android(slug, channel_id=None):
-    """
-    Android VLC launcher.
-    Always opens the COMPLETE client playlist, not a single channel.
-    """
     playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
     p = urlparse(playlist_url)
     clean = playlist_url.replace("https://", "").replace("http://", "")
     scheme = p.scheme or "https"
-    intent = (
+    intent1 = (
         "intent://" + clean +
         "#Intent;scheme=" + scheme +
+        ";action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE" +
         ";package=org.videolan.vlc;type=audio/x-mpegurl;S.title=NOXIPTV;end"
     )
-    return redirect(intent)
+    intent2 = (
+        "intent://" + clean +
+        "#Intent;scheme=" + scheme +
+        ";action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE" +
+        ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end"
+    )
+    vlc_scheme = "vlc://" + requests.utils.quote(playlist_url, safe="")
+    return client_page(f"""
+    <div class="top"><h2>NOX IPTV VLC Android Safe Mode</h2></div>
+    <div class="wrap">
+      <div class="player">
+        <h3>Metoda më e sigurt për Android</h3>
+        <p class="hint">Nëse VLC nuk e pranon hapjen direkte, kjo metodë e kopjon linkun e listës komplet dhe hap VLC. Pastaj në VLC: Open Network Stream → Paste.</p>
+        <p>
+          <button class="btn" onclick="safeOpen()">📋 Copy playlist + Open VLC</button>
+          <a class="btn gray" href="{playlist_url}">Open playlist file</a>
+          <a class="btn gray" href="/watch/home">Back</a>
+        </p>
+        <hr>
+        <h3>Metoda direkte, provo nëse do</h3>
+        <p>
+          <a class="btn gray" href="{intent1}">Intent M3U</a>
+          <a class="btn gray" href="{intent2}">Intent Video</a>
+          <a class="btn gray" href="{vlc_scheme}">VLC Scheme</a>
+        </p>
+        <p class="hint">Playlist URL:<br><code>{playlist_url}</code></p>
+      </div>
+    </div>
+    <script>
+      const playlistUrl = "{playlist_url}";
+      function safeOpen() {{
+        navigator.clipboard.writeText(playlistUrl).catch(()=>{{}});
+        setTimeout(function() {{
+          window.location.href = "vlc://";
+        }}, 250);
+      }}
+    </script>
+    """)
 
 
 @app.route("/watch/debug")
@@ -2043,7 +2106,7 @@ def watch_home():
             <button class="btn gray vlcbtn" onclick="openVlc('android')"><span class="vlcico">🎥</span><span class="vlcico">🤖</span> VLC Android</button>
             <a class="btn gray" href="/watch/debug">Debug</a>
           </div>
-          <p class="hint" id="hint">Kliko kanal. VLC hap listën komplet të klientit, jo vetëm kanalin.</p>
+          <p class="hint" id="hint">Kliko kanal. VLC hap Safe Mode me Copy playlist + Open VLC.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
