@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V6.4
+NOX IPTV CLOUD PANEL V6.5
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -41,8 +41,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V6.4"
-API_VERSION = "v6.4"
+APP_VERSION = "V6.5"
+API_VERSION = "v6.5"
 
 
 HEADERS = {
@@ -381,23 +381,22 @@ def template_stats(text):
 
 
 def replace_stream_credentials_in_url(url, new_base, username, password, output="ts"):
+    """
+    Stable V6.5:
+    Always generate direct Xtream stream URL:
+    http://host:port/user/pass/streamid
+
+    Do not force /live/*.m3u8 because this provider breaks with it.
+    """
     new_base = normalize_base(new_base)
     old = urlparse(url)
     nb = urlparse(new_base)
     parts = [x for x in old.path.split("/") if x]
 
-    stream_id = ""
-    if len(parts) >= 3:
-        stream_id = parts[-1]
-    elif len(parts) >= 1:
-        stream_id = parts[-1]
+    stream_id = parts[-1] if parts else ""
     stream_id = stream_id.replace(".ts", "").replace(".m3u8", "")
 
-    if str(output).lower() == "m3u8":
-        new_path = "/" + "/".join(["live", username, password, stream_id + ".m3u8"])
-    else:
-        new_path = "/" + "/".join([username, password, stream_id])
-
+    new_path = "/" + "/".join([username, password, stream_id])
     return urlunparse((nb.scheme or old.scheme or "http", nb.netloc, new_path, "", "", ""))
 
 
@@ -627,7 +626,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.4</title>
+  <title>NOX IPTV V6.5</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -661,7 +660,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V6.4</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V6.5</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -699,7 +698,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.4</title>
+  <title>NOX IPTV V6.5</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1385,6 +1384,32 @@ def watch_login():
     return client_page(body)
 
 
+
+@app.route("/watch/debug")
+def watch_debug():
+    if not client_login_required():
+        return redirect("/watch")
+    slug = session["client_slug"]
+    try:
+        text = get_playlist_for_client(slug, force_refresh=True)
+        items = parse_m3u_items(text)[:20]
+        rows = ""
+        for it in items:
+            rows += f"<tr><td>{it.get('name')}</td><td><code>{it.get('url')}</code></td></tr>"
+        return client_page(f"""
+        <div class="top"><h2>NOX IPTV Debug</h2></div>
+        <div class="wrap">
+          <div class="player">
+            <h3>First 20 generated URLs</h3>
+            <table>{rows}</table>
+            <p><a class="btn" href="/watch/home">Back</a></p>
+          </div>
+        </div>
+        """)
+    except Exception as e:
+        return client_page(f"<div class='top'><h2>Debug</h2></div><div class='wrap'><div class='player'>Error: {e}</div></div>")
+
+
 @app.route("/watch/logout")
 def watch_logout():
     session.pop("client_slug", None)
@@ -1488,12 +1513,13 @@ def watch_home():
             <button class="btn gray" onclick="stopTarget()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
             <a class="btn gray" id="vlcIphone" href="#">Open VLC iPhone</a>
-            <a class="btn gray" id="vlcAndroid1" href="#" onclick="setTimeout(openAndroidVlcNow, 50)">Open VLC Android</a>
+            <a class="btn gray" id="vlcAndroid1" href="#">Open VLC Android</a>
             <a class="btn gray" id="vlcAndroid2" href="#">Android Alt</a>
             <a class="btn gray" id="vlcClassic" href="#">VLC Classic</a>
             <button class="btn gray" onclick="copyCurrentUrl()">Copy URL</button>
+            <a class="btn gray" href="/watch/debug">Debug URLs</a>
           </div>
-          <p class="hint" id="hint">Kliko kanal. Për iPhone përdoret HLS direct kur është e mundur; VLC mbetet fallback.</p>
+          <p class="hint" id="hint">Kliko kanal. Direct TS është kthyer si versionet që punonin; VLC mbetet fallback.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -1552,19 +1578,18 @@ def watch_home():
           }}
       }}
 
-      function openAndroidVlcNow() {{
-        const a = document.getElementById("vlcAndroid1");
-        if (a && a.href && a.href !== "#") {{
-          window.location.href = a.href;
-        }}
-      }}
 
       function updateVlc(ch) {{
         const encoded = encodeURIComponent(ch.url);
-        const clean = ch.url.replace(/^https?:\\/\\//,"");
+        const clean = ch.url.replace(/^https?:\/\//,"");
         const scheme = ch.url.startsWith("https://") ? "https" : "http";
-        document.getElementById("vlcIphone").href = "vlc-x-callback://x-callback-url/stream?url=" + encoded;
-        document.getElementById("vlcAndroid1").href = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
+
+        document.getElementById("vlcIphone").href =
+          "vlc-x-callback://x-callback-url/stream?url=" + encoded;
+
+        document.getElementById("vlcAndroid1").href =
+          "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
+
         document.getElementById("vlcAndroid2").href = "vlc://" + ch.url;
         document.getElementById("vlcClassic").href = "vlc://" + ch.url;
       }}
