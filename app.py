@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V5.5
+NOX IPTV CLOUD PANEL V4.8
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -391,7 +391,7 @@ def client_login_required():
 
 
 
-# ---------------- V5.5 FULL helpers ----------------
+# ---------------- V5.6 FULL helpers ----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -518,7 +518,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V5.5</title>
+  <title>Nox IPTV Panel V4.8</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -552,7 +552,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V5.5</h1>
+      <h1>Nox IPTV Panel V4.8</h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -1098,7 +1098,7 @@ def backup_all():
     if not login_required():
         return redirect("/login")
     data = {
-        "version": "v5.5",
+        "version": "v4.8",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
@@ -1265,7 +1265,7 @@ def watch_home():
     slug = session["client_slug"]
     clients = load_clients()
     c = clients.get(slug)
-    if not c or not c.get("allow_watch", True) or not c.get("enabled", True):
+    if not c or not c.get("allow_watch", True):
         return redirect("/watch/logout")
 
     try:
@@ -1273,7 +1273,7 @@ def watch_home():
         items = parse_m3u_items(text)
     except Exception as e:
         return client_page(f"""
-        <div class="top"><h2>Nox IPTV Player</h2></div>
+        <div class="top"><h2>NOX IPTV Watch</h2></div>
         <div class="wrap"><div class="player"><p>Problem: {e}</p></div></div>
         """)
 
@@ -1288,464 +1288,157 @@ def watch_home():
             "url": it["url"],
         })
 
-    settings = get_settings()
     data_json = json.dumps(safe_items, ensure_ascii=False)
-    settings_json = json.dumps(settings, ensure_ascii=False)
-    brand = settings.get("brand_name", "Nox IPTV")
-
     body = f"""
-    <style>
-      .layout {{ display:grid; grid-template-columns:230px 1fr; gap:12px; }}
-      .side {{ background:#111827; border-radius:16px; padding:12px; height:fit-content; position:sticky; top:92px; }}
-      .cat {{ display:block; width:100%; text-align:left; margin:6px 0; background:#1f2937; }}
-      .cat.active {{ background:{settings.get('brand_color','#2563eb')}; }}
-      @media(max-width:800px) {{ .layout {{ grid-template-columns:1fr; }} .side {{ position:relative; top:0; }} }}
-    </style>
     <div class="top">
-      <div class="brandrow">
-        <div class="noxlogo">{f'<img src="{settings.get("logo_url")}" onerror="this.outerHTML=\'<span>{settings.get("logo_text","NOX")}</span>\'">' if settings.get("logo_url") else settings.get("logo_text","NOX")}</div>
-        <div>
-          <div class="brandtitle">{brand}</div>
-          <div class="hint">{c.get('name')}</div>
-        </div>
-      </div>
+      <h2>{c.get('name')} - NOX IPTV Watch</h2>
       <div class="bar">
         <input id="search" placeholder="Kërko kanal...">
         <select id="group">
-          <option value="">Të gjitha</option>
-          <option value="__fav">⭐ Favorites</option>
-          <option value="__recent">🕘 Recent</option>
-          <option value="Sport">Sport</option>
+          <option value="">Të gjitha kategoritë</option>
+          {''.join(f'<option value="{g}">{g}</option>' for g in groups)}
         </select>
         <a class="btn red" href="/watch/logout">Logout</a>
       </div>
     </div>
-    <div class="wrap layout">
-      <div class="side">
-        <button class="btn cat active" onclick="setGroup('')">Të gjitha</button>
-        <button class="btn cat" onclick="setGroup('__fav')">⭐ Favorites</button>
-        <button class="btn cat" onclick="setGroup('__recent')">🕘 Recent</button>
-        <button class="btn cat" onclick="setGroup('Sport')">Sport</button>
+    <div class="wrap">
+      <div class="player">
+        <video id="video" controls playsinline></video>
+        <div class="now" id="now">Zgjedh një kanal.</div>
+        <div class="hint" id="hint">Zgjedh një kanal. Player-i do të provojë ta hapë direkt në browser.</div>
+        <p>
+          <a class="btn" id="openVlc" href="#" target="_blank">Open in VLC</a>
+          <button class="btn gray" onclick="copyUrl()">Copy URL</button>
+        </p>
+        <p class="hint">Nëse browseri nuk e hap kanalin, përdor Open in VLC.</p>
+        <p class="hint">Nëse një kanal nuk hapet, ai format mund të mos suportohet nga browseri. Për shikim 100% në browser kërko output m3u8/HLS.</p>
       </div>
-      <div>
-        <div class="player">
-          <video id="video" controls playsinline webkit-playsinline preload="none"></video>
-          <div class="now"><span id="now">Zgjedh një kanal.</span><span id="liveBadge" class="livebadge">IDLE</span></div>
-          <p>
-            <button class="btn" onclick="retryCurrent()">Retry</button>
-            <button class="btn gray" onclick="stopPlayer()">Stop</button>
-            <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
-            <a class="btn gray" id="openVlcAndroid" href="#" style="display:none">VLC Android</a>
-            <a class="btn gray" id="openVlcClassic" href="#" style="display:none">VLC Classic</a>
-          </p>
-          <p class="hint" id="hint">Force Browser Mode aktiv: kanali duhet të shfaqet në ekran këtu.</p>
-          <p class="hint" id="methodStatus">Metoda: gati</p>
-        </div>
-        <div class="grid" id="channels"></div>
-      </div>
+      <div class="grid" id="channels"></div>
     </div>
-
     <script>
       const channels = {data_json};
-      const settings = {settings_json};
       let currentUrl = "";
-      let currentChannel = null;
-      let playToken = 0;
-      const favKey = "nox_favorites_{slug}";
-      const recentKey = "nox_recent_{slug}";
-
-      function getFavs() {{ return JSON.parse(localStorage.getItem(favKey) || "[]"); }}
-      function setFavs(v) {{ localStorage.setItem(favKey, JSON.stringify(v)); }}
-      function getRecent() {{ return JSON.parse(localStorage.getItem(recentKey) || "[]"); }}
-      function setRecent(v) {{ localStorage.setItem(recentKey, JSON.stringify(v.slice(0, 30))); }}
-
-      function customCategory(ch) {{
-        const text = ((ch.name || "") + " " + (ch.group || "")).toUpperCase();
-        const sportKeys = [
-          "ART SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA SPORT",
-          "EUROSPORT", "FIGHT BOX", "FIGHTBOX"
-        ];
-        for (const key of sportKeys) {{
-          if (text.includes(key)) return "Sport";
-        }}
-        return ch.group;
-      }}
-
-      function setGroup(g) {{
-        document.getElementById("group").value = g;
-        document.querySelectorAll(".cat").forEach(x => x.classList.remove("active"));
-        render();
-      }}
-
-      function updateExternalLinks(url) {{
-        const clean = url.replace(/^https?:\/\//, "");
-        const directIntent = "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
-        const httpsIntent = url.startsWith("https://")
-          ? "intent://" + clean + "#Intent;scheme=https;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end"
-          : directIntent;
-        const classic = "vlc://" + url;
-        const a1 = document.getElementById("openVlcAndroid");
-        const a2 = document.getElementById("openVlcClassic");
-        if (a1) a1.href = httpsIntent;
-        if (a2) a2.href = classic;
-      }}
-
-      function markRecent(ch) {{
-        let rec = getRecent().filter(x => x !== ch.i);
-        rec.unshift(ch.i);
-        setRecent(rec);
-      }}
-
-      function toggleFavorite() {{
-        if (!currentChannel) return;
-        let favs = getFavs();
-        if (favs.includes(currentChannel.i)) favs = favs.filter(x => x !== currentChannel.i);
-        else favs.push(currentChannel.i);
-        setFavs(favs);
-        render();
-      }}
 
       function playChannel(ch) {{
-        currentChannel = ch;
         currentUrl = ch.url;
-        markRecent(ch);
-        updateExternalLinks(ch.url);
-        try {{ navigator.sendBeacon("/watch/log", JSON.stringify({{channel: ch.name, id: ch.i, event: "channel_click"}})); }} catch(e) {{}}
         document.getElementById("now").innerText = ch.name + " — " + ch.group;
-        startPlayer(ch);
-      }}
-
-      function stopPlayer(clearAll=true) {{
+        const vlcLink = document.getElementById("openVlc");
+        if (vlcLink) {{
+          vlcLink.href = "vlc://" + ch.url;
+        }}
         const video = document.getElementById("video");
-        if (window.hls) {{ try {{ window.hls.destroy(); }} catch(e) {{}} window.hls = null; }}
+
+        if (window.hls) {{
+          window.hls.destroy();
+          window.hls = null;
+        }}
         if (window.tsPlayer) {{
-          try {{ window.tsPlayer.pause(); }} catch(e) {{}}
-          try {{ window.tsPlayer.unload(); }} catch(e) {{}}
-          try {{ window.tsPlayer.detachMediaElement(); }} catch(e) {{}}
           try {{ window.tsPlayer.destroy(); }} catch(e) {{}}
           window.tsPlayer = null;
         }}
-        if (clearAll) clearWatchdog();
-        try {{ video.pause(); }} catch(e) {{}}
+
+        video.pause();
         video.removeAttribute("src");
         video.load();
-      }}
 
-      let freezeTimer = null;
-      let lastVideoTime = 0;
-      let reconnectAttempts = 0;
-
-      function setStatus(text) {{
-        const el = document.getElementById("methodStatus");
-        if (el) el.innerText = text;
-      }}
-
-      function setBadge(text, cls) {{
-        const b = document.getElementById("liveBadge");
-        if (!b) return;
-        b.className = "livebadge " + (cls || "");
-        b.innerText = text;
-      }}
-
-      function clearWatchdog() {{
-        if (freezeTimer) clearInterval(freezeTimer);
-        freezeTimer = null;
-      }}
-
-      function startWatchdog(methodName) {{
-        clearWatchdog();
-        const video = document.getElementById("video");
-        lastVideoTime = video.currentTime || 0;
-        freezeTimer = setInterval(() => {{
-          if (!currentChannel || video.paused) return;
-          const nowTime = video.currentTime || 0;
-          if (video.readyState >= 2 && Math.abs(nowTime - lastVideoTime) < 0.05) {{
-            reconnectAttempts += 1;
-            if (reconnectAttempts <= 3) {{
-              setStatus("Auto reconnect " + reconnectAttempts + "/3");
-              restartSameMethod();
-            }} else {{
-              setStatus("Po kaloj në metodë tjetër...");
-              retryCurrent();
-            }}
-          }} else {{
-            lastVideoTime = nowTime;
-          }}
-        }}, 9000);
-      }}
-
-      function restartSameMethod() {{
-        if (!currentChannel) return;
-        tryMpegTsProxy(currentChannel, playToken);
-      }}
-
-      function startPlayer(ch) {{
-        playToken += 1;
-        reconnectAttempts = 0;
-        const token = playToken;
-        stopPlayer();
-        document.getElementById("hint").innerText = "Po hapet live në browser...";
-        setBadge("LOADING", "");
-        setStatus("Metoda 1/6: HLS proxy/rewrite");
-        tryHlsProxy(ch, token);
-      }}
-
-      function failNext(token, label, nextFn) {{
-        if (token !== playToken) return;
-        setStatus(label);
-        setTimeout(nextFn, 200);
-      }}
-
-      function attachVideoEvents(token, methodName) {{
-        const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
-        let started = false;
-        video.onplaying = () => {{
-          if (token === playToken) {{
-            started = true;
-            hint.innerText = "Live tani në browser.";
-            setStatus("Aktive: " + methodName);
-            setBadge("LIVE", "on");
-            startWatchdog(methodName);
-            try {{ navigator.sendBeacon("/watch/log", JSON.stringify({{channel: currentChannel.name, id: currentChannel.i, event: "browser_playing", method: methodName}})); }} catch(e) {{}}
-          }}
+        video.onerror = function() {{
+          document.getElementById("hint").innerText =
+            "Ky kanal nuk u hap në browser. Provo Open in VLC.";
         }};
-        video.oncanplay = () => {{
-          if (token === playToken && !started) {{
-            video.play().catch(() => {{}});
-          }}
-        }};
-        video.onwaiting = () => {{
-          if (token === playToken && !started) hint.innerText = "Duke ngarkuar live stream...";
-        }};
-        video.onerror = () => {{}};
-      }}
 
-      function tryHlsProxy(ch, token) {{
-        if (token !== playToken) return;
-        const video = document.getElementById("video");
-        const src = "/watch/hls/" + ch.i + "?t=" + Date.now();
-        attachVideoEvents(token, "HLS proxy");
-
-        if (window.hls) {{ try {{ window.hls.destroy(); }} catch(e) {{}} window.hls = null; }}
-        if (Hls.isSupported()) {{
-          try {{
-            window.hls = new Hls({{
-              lowLatencyMode:true,
-              liveSyncDurationCount:3,
-              maxBufferLength:30,
-              backBufferLength:10,
-              enableWorker:true,
-              manifestLoadingTimeOut:9000,
-              levelLoadingTimeOut:9000,
-              fragLoadingTimeOut:12000,
-              nudgeOffset:0.2,
-              nudgeMaxRetry:8
-            }});
-            window.hls.loadSource(src);
-            window.hls.attachMedia(video);
-            let parsed = false;
-            window.hls.on(Hls.Events.MANIFEST_PARSED, () => {{
-              parsed = true;
-              video.play().catch(() => failNext(token, "Metoda 2/6: HLS direkt", () => tryHlsDirect(ch, token)));
-            }});
-            window.hls.on(Hls.Events.ERROR, (event, data) => {{
-              if (data.fatal && token === playToken) failNext(token, "Metoda 2/6: HLS direkt", () => tryHlsDirect(ch, token));
-            }});
-            setTimeout(() => {{
-              if (token === playToken && (!parsed || video.readyState < 2)) failNext(token, "Metoda 2/6: HLS direkt", () => tryHlsDirect(ch, token));
-            }}, 9500);
-          }} catch(e) {{
-            failNext(token, "Metoda 2/6: HLS direkt", () => tryHlsDirect(ch, token));
-          }}
-        }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
-          video.src = src;
-          video.play().catch(() => failNext(token, "Metoda 2/6: HLS direkt", () => tryHlsDirect(ch, token)));
-          setTimeout(() => {{
-            if (token === playToken && video.readyState < 2) failNext(token, "Metoda 2/6: HLS direkt", () => tryHlsDirect(ch, token));
-          }}, 9500);
-        }} else {{
-          failNext(token, "Metoda 2/6: HLS direkt", () => tryHlsDirect(ch, token));
-        }}
-      }}
-
-      function tryHlsDirect(ch, token) {{
-        if (token !== playToken) return;
-        stopPlayer(false);
-        const video = document.getElementById("video");
         const lower = ch.url.toLowerCase();
-        attachVideoEvents(token, "HLS direkt");
 
-        if (!lower.includes(".m3u8")) {{
-          failNext(token, "Metoda 3/6: MPEGTS proxy stable", () => tryMpegTsProxy(ch, token));
-          return;
-        }}
-
-        if (Hls.isSupported()) {{
-          try {{
-            window.hls = new Hls({{lowLatencyMode:true, liveSyncDurationCount:3, maxBufferLength:30, enableWorker:true}});
+        if (lower.includes(".m3u8")) {{
+          if (Hls.isSupported()) {{
+            window.hls = new Hls({{
+              maxBufferLength: 30,
+              liveSyncDurationCount: 3,
+              enableWorker: true
+            }});
             window.hls.loadSource(ch.url);
             window.hls.attachMedia(video);
-            let parsed = false;
-            window.hls.on(Hls.Events.MANIFEST_PARSED, () => {{
-              parsed = true;
-              video.play().catch(() => failNext(token, "Metoda 3/6: MPEGTS proxy stable", () => tryMpegTsProxy(ch, token)));
+            window.hls.on(Hls.Events.MANIFEST_PARSED, function() {{
+              video.play().catch(() => {{}});
             }});
-            window.hls.on(Hls.Events.ERROR, (event, data) => {{ if (data.fatal) failNext(token, "Metoda 3/6: MPEGTS proxy stable", () => tryMpegTsProxy(ch, token)); }});
-            setTimeout(() => {{
-              if (token === playToken && (!parsed || video.readyState < 2)) failNext(token, "Metoda 3/6: MPEGTS proxy stable", () => tryMpegTsProxy(ch, token));
-            }}, 8000);
-          }} catch(e) {{
-            failNext(token, "Metoda 3/6: MPEGTS proxy stable", () => tryMpegTsProxy(ch, token));
+            window.hls.on(Hls.Events.ERROR, function(event, data) {{
+              if (data.fatal) {{
+                document.getElementById("hint").innerText =
+                  "HLS error: kanali nuk u hap në browser.";
+              }}
+            }});
+            document.getElementById("hint").innerText = "HLS/M3U8 player aktiv...";
+          }} else if (video.canPlayType("application/vnd.apple.mpegurl")) {{
+            video.src = ch.url;
+            video.play().catch(() => {{}});
+            document.getElementById("hint").innerText = "Native HLS player aktiv...";
+          }} else {{
+            document.getElementById("hint").innerText = "Ky browser nuk suporton HLS.";
           }}
         }} else {{
-          video.src = ch.url;
-          video.play().catch(() => failNext(token, "Metoda 3/6: MPEGTS proxy stable", () => tryMpegTsProxy(ch, token)));
-          setTimeout(() => {{
-            if (token === playToken && video.readyState < 2) failNext(token, "Metoda 3/6: MPEGTS proxy stable", () => tryMpegTsProxy(ch, token));
-          }}, 8000);
+          // MPEG-TS live stream attempt via mpegts.js.
+          // Works only on browsers with MediaSource and if provider allows CORS.
+          if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
+            try {{
+              window.tsPlayer = mpegts.createPlayer({{
+                type: "mpegts",
+                isLive: true,
+                url: ch.url,
+                enableStashBuffer: false,
+                stashInitialSize: 128
+              }});
+              window.tsPlayer.attachMediaElement(video);
+              window.tsPlayer.load();
+              window.tsPlayer.play();
+              document.getElementById("hint").innerText =
+                "MPEG-TS player aktiv. Në iPhone Safari mund të mos punojë nëse mungon CORS.";
+            }} catch(e) {{
+              document.getElementById("hint").innerText =
+                "MPEG-TS nuk u hap. Duhet HLS relay/transcoding në VPS.";
+            }}
+          }} else {{
+            // Fallback direct playback
+            video.src = ch.url;
+            video.play().catch(() => {{
+              document.getElementById("hint").innerText =
+                "Browseri nuk e hapi TS/MPEGTS. Provo Open in VLC ose duhet HLS/M3U8/VPS relay.";
+            }});
+            document.getElementById("hint").innerText = "Duke provuar direct playback...";
+          }}
         }}
       }}
 
-      function tryMpegTsProxy(ch, token) {{
-        if (token !== playToken) return;
-        stopPlayer(false);
-        const video = document.getElementById("video");
-        const proxyUrl = "/watch/stream/" + ch.i + "?mode=ts&t=" + Date.now();
-        attachVideoEvents(token, "MPEGTS proxy stable");
-
-        if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
-          try {{
-            window.tsPlayer = mpegts.createPlayer({{
-              type:"mpegts",
-              isLive:true,
-              url:proxyUrl,
-              cors:false,
-              enableStashBuffer:true,
-              stashInitialSize:1024,
-              lazyLoad:false,
-              autoCleanupSourceBuffer:true,
-              autoCleanupMaxBackwardDuration:30,
-              autoCleanupMinBackwardDuration:10,
-              fixAudioTimestampGap:true
-            }}, {{
-              enableWorker: true,
-              enableStashBuffer: true,
-              stashInitialSize: 1024,
-              isLive: true,
-              lazyLoad: false
-            }});
-            window.tsPlayer.on(mpegts.Events.ERROR, function() {{
-              if (token === playToken) failNext(token, "Metoda 4/6: MPEGTS direct provider", () => tryMpegTsDirect(ch, token));
-            }});
-            window.tsPlayer.attachMediaElement(video);
-            window.tsPlayer.load();
-            window.tsPlayer.play();
-            setTimeout(() => {{
-              if (token === playToken && video.readyState < 2) failNext(token, "Metoda 4/6: MPEGTS direct provider", () => tryMpegTsDirect(ch, token));
-            }}, 11000);
-          }} catch(e) {{
-            failNext(token, "Metoda 4/6: MPEGTS direct provider", () => tryMpegTsDirect(ch, token));
-          }}
-        }} else {{
-          failNext(token, "Metoda 5/6: direct video", () => tryDirectVideo(ch, token));
+      function copyUrl() {{
+        if (!currentUrl) {{
+          alert("Zgjedh një kanal së pari.");
+          return;
         }}
+        navigator.clipboard.writeText(currentUrl).then(() => {{
+          alert("URL u kopjua.");
+        }}).catch(() => {{
+          alert("Nuk u kopjua dot automatikisht.");
+        }});
       }}
-
-      function tryMpegTsDirect(ch, token) {{
-        if (token !== playToken) return;
-        stopPlayer(false);
-        const video = document.getElementById("video");
-        attachVideoEvents(token, "MPEGTS direct provider");
-
-        if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
-          try {{
-            window.tsPlayer = mpegts.createPlayer({{
-              type:"mpegts",
-              isLive:true,
-              url:ch.url,
-              cors:true,
-              enableStashBuffer:true,
-              stashInitialSize:1024,
-              lazyLoad:false
-            }});
-            window.tsPlayer.on(mpegts.Events.ERROR, function() {{
-              if (token === playToken) failNext(token, "Metoda 5/6: direct video", () => tryDirectVideo(ch, token));
-            }});
-            window.tsPlayer.attachMediaElement(video);
-            window.tsPlayer.load();
-            window.tsPlayer.play();
-            setTimeout(() => {{
-              if (token === playToken && video.readyState < 2) failNext(token, "Metoda 5/6: direct video", () => tryDirectVideo(ch, token));
-            }}, 9000);
-          }} catch(e) {{
-            failNext(token, "Metoda 5/6: direct video", () => tryDirectVideo(ch, token));
-          }}
-        }} else {{
-          failNext(token, "Metoda 5/6: direct video", () => tryDirectVideo(ch, token));
-        }}
-      }}
-
-      function tryDirectVideo(ch, token) {{
-        if (token !== playToken) return;
-        stopPlayer(false);
-        const video = document.getElementById("video");
-        attachVideoEvents(token, "Direct video");
-        video.src = ch.url;
-        video.play().catch(() => failNext(token, "Metoda 6/6: proxy direct video", () => tryProxyDirectVideo(ch, token)));
-        setTimeout(() => {{
-          if (token === playToken && video.readyState < 2) failNext(token, "Metoda 6/6: proxy direct video", () => tryProxyDirectVideo(ch, token));
-        }}, 8000);
-      }}
-
-      function tryProxyDirectVideo(ch, token) {{
-        if (token !== playToken) return;
-        stopPlayer(false);
-        const video = document.getElementById("video");
-        const proxyUrl = "/watch/stream/" + ch.i + "?direct=1&t=" + Date.now();
-        attachVideoEvents(token, "Proxy direct video");
-        video.src = proxyUrl;
-        video.play().catch(() => finalBrowserFail(token));
-        setTimeout(() => {{
-          if (token === playToken && video.readyState < 2) finalBrowserFail(token);
-        }}, 10000);
-      }}
-
-      function finalBrowserFail(token) {{
-        if (token !== playToken) return;
-        clearWatchdog();
-        setBadge("FAILED", "fail");
-        document.getElementById("hint").innerText = "Ky stream nuk u dekodua nga browseri pas të gjitha metodave free.";
-        setStatus("Free browser methods exhausted. VLC punon si fallback.");
-        try {{ navigator.sendBeacon("/watch/log", JSON.stringify({{channel: currentChannel.name, id: currentChannel.i, event: "browser_failed_all_free_methods"}})); }} catch(e) {{}}
-      }}
-
-      function retryCurrent() {{ if (currentChannel) startPlayer(currentChannel); }}
 
       function render() {{
         const q = document.getElementById("search").value.toLowerCase();
         const g = document.getElementById("group").value;
-        const favs = getFavs();
-        const rec = getRecent();
         const box = document.getElementById("channels");
         box.innerHTML = "";
         channels.filter(ch => {{
-          let okGroup = true;
-          if (g === "__fav") okGroup = favs.includes(ch.i);
-          else if (g === "__recent") okGroup = rec.includes(ch.i);
-          else if (g === "Sport") okGroup = customCategory(ch) === "Sport";
-          else okGroup = (!g || ch.group === g);
-          return (!q || ch.name.toLowerCase().includes(q)) && okGroup;
-        }}).slice(0, 800).forEach(ch => {{
+          return (!q || ch.name.toLowerCase().includes(q)) && (!g || ch.group === g);
+        }}).slice(0, 500).forEach(ch => {{
           const div = document.createElement("div");
           div.className = "ch";
           div.onclick = () => playChannel(ch);
-          div.innerHTML = `${{ch.logo ? `<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">` : ""}}
-            <div class="name">${{favs.includes(ch.i) ? "⭐ " : ""}}${{ch.name}}</div>
-            <div class="group">${{customCategory(ch)}} · ${{ch.group}}</div>`;
+          div.innerHTML = `
+            ${{ch.logo ? `<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">` : ""}}
+            <div class="name">${{ch.name}}</div>
+            <div class="group">${{ch.group}}</div>
+          `;
           box.appendChild(div);
         }});
       }}
+
 
       document.getElementById("search").addEventListener("input", render);
       document.getElementById("group").addEventListener("change", render);
@@ -1753,6 +1446,7 @@ def watch_home():
     </script>
     """
     return client_page(body)
+
 
 
 @app.route("/watch/log", methods=["POST"])
@@ -1763,8 +1457,14 @@ def watch_log_event():
     data = request.get_json(silent=True) or {}
     ch = data.get("channel", "")
     ev = data.get("event", "event")
-    increment_channel_stat(slug, ch)
-    log_event(ev, slug, ch, status="client")
+    try:
+        increment_channel_stat(slug, ch)
+    except Exception:
+        pass
+    try:
+        log_event(ev, slug, ch, status="client")
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -2009,7 +1709,7 @@ def watch_capabilities():
     return {
         "ok": True,
         "browser_methods": ["hls_proxy", "hls_direct", "mpegts_proxy", "direct_video", "proxy_direct_video"],
-        "note": "V5.5 tries all browser methods automatically before showing failure."
+        "note": "V5.6 tries all browser methods automatically before showing failure."
     }
 
 @app.route("/health")
@@ -2017,7 +1717,7 @@ def health():
     return {
         "ok": True,
         "service": "noxiptv",
-        "version": "v5.5",
+        "version": "v4.8",
         "time": datetime.now().isoformat(),
         "clients": len(load_clients()),
         "template_channels": get_template_text().count("#EXTINF"),
