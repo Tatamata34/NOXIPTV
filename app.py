@@ -391,7 +391,7 @@ def client_login_required():
 
 
 
-# ---------------- V6.0 FULL helpers ----------------
+# ---------------- V6.1 FULL helpers ----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -1340,6 +1340,7 @@ def watch_home():
             <button class="btn" onclick="retryCurrent()">Retry</button>
             <button class="btn gray" onclick="stopTarget()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
+            <a class="btn gray" id="vlcIphone" href="#">Open VLC iPhone</a>
             <a class="btn gray" id="vlcAndroid" href="#">Open VLC Android</a>
             <a class="btn gray" id="vlcClassic" href="#">Open VLC Classic</a>
           </div>
@@ -1372,9 +1373,20 @@ def watch_home():
       function markRecent(ch) {{ let r=getRecent().filter(x=>x!==ch.i); r.unshift(ch.i); setRecent(r); }}
       function toggleFavorite() {{ const ch=current[target]; if(!ch)return; let f=getFavs(); if(f.includes(ch.i))f=f.filter(x=>x!==ch.i); else f.push(ch.i); setFavs(f); render(); }}
       function updateVlc(ch) {{
-        const clean=ch.url.replace(/^https?:\\/\\//,"");
-        document.getElementById("vlcAndroid").href="intent://"+clean+"#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
-        document.getElementById("vlcClassic").href="vlc://"+ch.url;
+        const encoded = encodeURIComponent(ch.url);
+        const clean = ch.url.replace(/^https?:\/\//,"");
+        const scheme = ch.url.startsWith("https://") ? "https" : "http";
+
+        // iPhone VLC works best with x-callback encoded URL
+        document.getElementById("vlcIphone").href =
+          "vlc-x-callback://x-callback-url/stream?url=" + encoded;
+
+        // Android VLC works best with intent:// and correct original scheme
+        document.getElementById("vlcAndroid").href =
+          "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
+
+        // Classic fallback
+        document.getElementById("vlcClassic").href = "vlc://" + ch.url;
       }}
       function stopScreen(n) {{
         const v=document.getElementById("video"+n);
@@ -1384,36 +1396,139 @@ def watch_home():
         document.getElementById("badge"+n).className="badge"; document.getElementById("badge"+n).innerText="STOP";
       }}
       function stopTarget() {{ stopScreen(target); }}
+
+      function setBadge(n, text, cls) {
+        const b = document.getElementById("badge"+n);
+        b.className = "badge " + (cls || "");
+        b.innerText = text;
+      }
+
+      function startWatchdog(n) {
+        if (watchdog[n]) clearInterval(watchdog[n]);
+        lastTime[n] = document.getElementById("video"+n).currentTime || 0;
+        watchdog[n] = setInterval(() => {
+          const v = document.getElementById("video"+n);
+          const ch = current[n];
+          if (!ch || manualStop[n]) return;
+
+          const now = v.currentTime || 0;
+          const stuck = v.readyState >= 2 && !v.paused && Math.abs(now - lastTime[n]) < 0.03;
+          const ended = v.ended || (isFinite(v.duration) && v.duration > 0 && now >= v.duration - 0.4);
+          const badState = v.readyState === 0;
+
+          if (stuck || ended || badState) {
+            reconnects[n] += 1;
+            setBadge(n, "RELOAD " + reconnects[n], "");
+            document.getElementById("hint").innerText = "Stream u ndal. Po rihapet automatikisht...";
+            if (reconnects[n] <= 6) {
+              playBrowser(ch, n, true);
+            } else {
+              setBadge(n, "VLC", "fail");
+              document.getElementById("hint").innerText = "Browser po e ndërpret këtë stream. Përdor VLC.";
+            }
+          }
+          lastTime[n] = now;
+        }, 7000);
+      }
+
       function playChannel(ch) {{
-        current[target]=ch; markRecent(ch); updateVlc(ch);
+        current[target]=ch; markRecent(ch); updateVlc(ch); reconnects[target]=0; manualStop[target]=false;
         document.getElementById("now"+target).innerText=ch.name;
         document.getElementById("badge"+target).className="badge"; document.getElementById("badge"+target).innerText="LOAD";
         try{{navigator.sendBeacon("/watch/log", JSON.stringify({{channel:ch.name,id:ch.i,event:"channel_click"}}));}}catch(e){{}}
         playBrowser(ch,target);
       }}
-      function playBrowser(ch,n) {{
+      function playBrowser(ch,n,isReconnect=false) {{
+        if (!isReconnect) reconnects[n]=0;
+        manualStop[n]=false;
+        if (watchdog[n]) {{ clearInterval(watchdog[n]); watchdog[n]=null; }}
         stopScreen(n);
+        manualStop[n]=false;
+
         const v=document.getElementById("video"+n), badge=document.getElementById("badge"+n);
         const lower=ch.url.toLowerCase();
         let src=lower.includes(".m3u8") ? ch.url : "/watch/stream/"+ch.i+"?t="+Date.now();
-        v.onplaying=function(){{badge.className="badge on";badge.innerText="LIVE";document.getElementById("hint").innerText="Live në browser.";}}
-        v.onerror=function(){{badge.className="badge fail";badge.innerText="VLC";document.getElementById("hint").innerText="Browser nuk e hapi. Përdor VLC.";}}
+
+        v.onplaying=function(){{
+          badge.className="badge on"; badge.innerText="LIVE";
+          document.getElementById("hint").innerText="Live në browser.";
+          startWatchdog(n);
+        }};
+        v.onpause=function(){{
+          if (!manualStop[n] && current[n]) {{
+            setTimeout(()=>{{
+              if (!manualStop[n] && current[n] && v.paused) {{
+                document.getElementById("hint").innerText="Stream u pauzua vetë. Po vazhdon...";
+                try {{ v.play(); }} catch(e) {{}}
+                setTimeout(()=>{{ if(v.paused) playBrowser(current[n],n,true); }}, 1200);
+              }}
+            }}, 800);
+          }}
+        }};
+        v.onended=function(){{
+          if (!manualStop[n] && current[n]) {{
+            setBadge(n,"RELOAD","");
+            playBrowser(current[n],n,true);
+          }}
+        }};
+        v.onstalled=function(){{
+          if (!manualStop[n] && current[n]) {{
+            document.getElementById("hint").innerText="Stall detected. Po rihapet...";
+            playBrowser(current[n],n,true);
+          }}
+        }};
+        v.onerror=function(){{
+          badge.className="badge fail"; badge.innerText="VLC";
+          document.getElementById("hint").innerText="Browser nuk e hapi. Përdor VLC.";
+        }};
+
         if(src.includes(".m3u8") && Hls.isSupported()) {{
-          hlsMap[n]=new Hls({{lowLatencyMode:true,liveSyncDurationCount:3,maxBufferLength:30}});
+          hlsMap[n]=new Hls({{
+            lowLatencyMode:true,
+            liveSyncDurationCount:3,
+            maxBufferLength:45,
+            backBufferLength:15,
+            enableWorker:true,
+            fragLoadingTimeOut:20000,
+            manifestLoadingTimeOut:12000
+          }});
           hlsMap[n].loadSource(src); hlsMap[n].attachMedia(v);
           hlsMap[n].on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>{{}}));
           hlsMap[n].on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal)playMpegts("/watch/stream/"+ch.i+"?t="+Date.now(),n);}});
         }} else playMpegts(src,n);
       }}
+
       function playMpegts(src,n) {{
         const v=document.getElementById("video"+n), badge=document.getElementById("badge"+n);
         if(window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
           try {{
-            tsMap[n]=mpegts.createPlayer({{type:"mpegts",isLive:true,url:src,cors:false,enableStashBuffer:false,stashInitialSize:128}});
+            if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}}}
+            tsMap[n]=mpegts.createPlayer({{
+              type:"mpegts",
+              isLive:true,
+              url:src,
+              cors:false,
+              enableStashBuffer:true,
+              stashInitialSize:1024,
+              lazyLoad:false,
+              autoCleanupSourceBuffer:true,
+              autoCleanupMaxBackwardDuration:30,
+              autoCleanupMinBackwardDuration:10,
+              fixAudioTimestampGap:true
+            }});
+            tsMap[n].on(mpegts.Events.ERROR,function(){{
+              badge.className="badge fail"; badge.innerText="RETRY";
+              if(!manualStop[n] && current[n]) setTimeout(()=>playBrowser(current[n],n,true),1200);
+            }});
             tsMap[n].attachMediaElement(v); tsMap[n].load(); tsMap[n].play();
-          }} catch(e) {{ v.src=src; v.play().catch(()=>{{badge.className="badge fail";badge.innerText="VLC";}}); }}
-        }} else {{ v.src=src; v.play().catch(()=>{{badge.className="badge fail";badge.innerText="VLC";}}); }}
+          }} catch(e) {{
+            v.src=src; v.play().catch(()=>{{badge.className="badge fail";badge.innerText="VLC";}});
+          }}
+        }} else {{
+          v.src=src; v.play().catch(()=>{{badge.className="badge fail";badge.innerText="VLC";}});
+        }}
       }}
+
       function retryCurrent() {{ if(current[target])playBrowser(current[target],target); }}
       function render() {{
         const q=document.getElementById("search").value.toLowerCase(), favs=getFavs(), rec=getRecent(), box=document.getElementById("channels");
@@ -1722,7 +1837,7 @@ def watch_capabilities():
     return {
         "ok": True,
         "browser_methods": ["hls_proxy", "hls_direct", "mpegts_proxy", "direct_video", "proxy_direct_video"],
-        "note": "V6.0 tries all browser methods automatically before showing failure."
+        "note": "V6.1 tries all browser methods automatically before showing failure."
     }
 
 @app.route("/health")
