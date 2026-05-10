@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.0
+NOX IPTV CLOUD PANEL V7.1
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -36,13 +36,14 @@ LOGS_FILE = DATA_DIR / "logs.jsonl"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 DEVICE_FILE = DATA_DIR / "devices.json"
 CHANNEL_STATS_FILE = DATA_DIR / "channel_stats.json"
+SERVER_TEMPLATES_FILE = DATA_DIR / "server_templates.json"
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.0"
-API_VERSION = "v7.0"
+APP_VERSION = "V7.1"
+API_VERSION = "v7.1"
 
 
 HEADERS = {
@@ -68,10 +69,11 @@ app.secret_key = SECRET_KEY
 
 def build_full_backup():
     return {
-        "version": API_VERSION if "API_VERSION" in globals() else "v6.3",
+        "version": API_VERSION if "API_VERSION" in globals() else "v7.1",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients_raw(),
         "master_template": get_template_text_raw(),
+        "server_templates": load_server_templates() if "load_server_templates" in globals() else [],
         "note": "Auto backup from NOX IPTV panel."
     }
 
@@ -164,6 +166,9 @@ def load_clients():
                 CLIENTS_FILE.write_text(json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8")
             if master and not TEMPLATE_FILE.exists():
                 TEMPLATE_FILE.write_text(master, encoding="utf-8")
+            servers = data.get("server_templates", [])
+            if servers and not SERVER_TEMPLATES_FILE.exists():
+                SERVER_TEMPLATES_FILE.write_text(json.dumps(servers, ensure_ascii=False, indent=2), encoding="utf-8")
             return clients
         except Exception as e:
             print("seed backup problem:", e)
@@ -618,7 +623,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.0</title>
+  <title>NOX IPTV V7.1</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -652,7 +657,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.0</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.1</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -660,6 +665,7 @@ ADMIN_HTML = """
         <a class="btn" href="/template">Master Template</a>
         <a class="btn green" href="/add">Add Client</a>
         <a class="btn gray" href="/status">Status</a>
+        <a class="btn gray" href="/servers">Server Templates</a>
         <a class="btn gray" href="/logs">Logs</a>
         <a class="btn gray" href="/analytics">Analytics</a>
         <a class="btn gray" href="/settings">Branding/Settings</a>
@@ -690,7 +696,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.0</title>
+  <title>NOX IPTV V7.1</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -731,6 +737,68 @@ def admin_page(body):
 
 def client_page(body):
     return render_template_string(CLIENT_HTML, body=body)
+
+
+
+# ---------------- Server Templates ----------------
+
+def load_server_templates():
+    if SERVER_TEMPLATES_FILE.exists():
+        try:
+            data = json.loads(SERVER_TEMPLATES_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+    return []
+
+
+def save_server_templates(servers):
+    SERVER_TEMPLATES_FILE.write_text(json.dumps(servers, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        save_auto_backup()
+    except Exception:
+        pass
+
+
+def server_slug(name, server):
+    return slugify((name or server or "server")[:80])
+
+
+def test_server_template(server, username="", password=""):
+    server = normalize_base(server)
+    parsed = urlparse(server)
+    out = {
+        "server": server,
+        "host": parsed.hostname or "",
+        "ip": resolve_ip(parsed.hostname or "") if parsed.hostname else "",
+        "root_ok": False,
+        "api_ok": False,
+        "status": "",
+        "expiry": "",
+        "connections": "",
+        "error": ""
+    }
+    try:
+        r = requests.get(server, headers=HEADERS, timeout=12, allow_redirects=True)
+        out["root_ok"] = r.status_code < 500
+        out["root_status"] = r.status_code
+    except Exception as e:
+        out["root_error"] = str(e)
+
+    if username and password:
+        try:
+            info = check_api_from_parts(server, username, password)
+            out["api_ok"] = bool(info.get("ok"))
+            out["status"] = info.get("status", "")
+            out["expiry"] = info.get("expiry", "")
+            out["connections"] = f"{info.get('active','?')}/{info.get('max','?')}"
+            if not info.get("ok"):
+                out["error"] = info.get("error", "")
+        except Exception as e:
+            out["api_ok"] = False
+            out["error"] = str(e)
+    return out
 
 
 # ---------------- Admin routes ----------------
@@ -956,6 +1024,12 @@ def add_edit(slug=None):
         <div class="grid">
           <div class="card">
             <h3>Template mode</h3>
+            <label>Server Template</label>
+            <select name="server_template_select" onchange="document.querySelector('[name=server]').value=this.value">
+              <option value="">Mos ndrysho / manual</option>
+              {''.join(f'<option value="{s.get("server","")}">{s.get("name","Server")} - {s.get("server","")}</option>' for s in load_server_templates())}
+            </select>
+
             <label>Server/host</label>
             <input name="server" value="{client.get('server','')}" placeholder="http://host.com:80">
             <label>Username</label>
@@ -1122,6 +1196,224 @@ def toggle_client(slug):
     save_clients(clients)
     return redirect("/")
 
+
+@app.route("/servers", methods=["GET", "POST"])
+def servers_page():
+    if not login_required():
+        return redirect("/login")
+
+    servers = load_server_templates()
+    msg = ""
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "add":
+            name = request.form.get("name", "").strip()
+            server = normalize_base(request.form.get("server", "").strip())
+            note = request.form.get("note", "").strip()
+            if server:
+                sid = server_slug(name, server)
+                servers.append({
+                    "id": sid + "-" + str(int(time.time())),
+                    "name": name or server,
+                    "server": server,
+                    "note": note,
+                    "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+                save_server_templates(servers)
+                msg = "<p class='ok'>Server template u shtua.</p>"
+        elif action == "bulk":
+            raw = request.form.get("bulk_servers", "")
+            added = 0
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if "|" in line:
+                    name, server = [x.strip() for x in line.split("|", 1)]
+                else:
+                    server = line
+                    name = server
+                server = normalize_base(server)
+                if server:
+                    servers.append({
+                        "id": server_slug(name, server) + "-" + str(int(time.time())) + "-" + str(added),
+                        "name": name,
+                        "server": server,
+                        "note": "",
+                        "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                    added += 1
+            save_server_templates(servers)
+            msg = f"<p class='ok'>{added} serverë u shtuan.</p>"
+
+    rows = ""
+    clients = load_clients()
+    client_options = "".join(f'<option value="{slug}">{c.get("name", slug)} ({slug})</option>' for slug, c in sorted(clients.items()))
+
+    for s in servers:
+        sid = s.get("id", "")
+        rows += f"""
+        <tr>
+          <td><b>{s.get('name')}</b><br><span class="small">{s.get('note','')}</span></td>
+          <td><code>{s.get('server')}</code></td>
+          <td>{s.get('created','')}</td>
+          <td>
+            <a class="btn gray" href="/servers/test/{sid}">Test</a>
+            <form method="post" action="/servers/apply/{sid}" style="display:inline-block;min-width:260px;">
+              <select name="client_slug" style="width:180px;display:inline-block;">{client_options}</select>
+              <button class="btn green">Apply to client</button>
+            </form>
+            <a class="btn red" href="/servers/delete/{sid}" onclick="return confirm('Delete server?')">Delete</a>
+          </td>
+        </tr>
+        """
+
+    body = f"""
+    <div class="card">
+      <h2>Server Templates</h2>
+      <p class="small">Këtu i ruan serverët si template, i teston, dhe pastaj zgjedh cilit klient t'ia vendosësh.</p>
+      {msg}
+      <form method="post">
+        <input type="hidden" name="action" value="add">
+        <label>Emri</label>
+        <input name="name" placeholder="p.sh. Server 1 Germany">
+        <label>Server/Host</label>
+        <input name="server" placeholder="http://host.com:80">
+        <label>Shënim</label>
+        <input name="note" placeholder="opsionale">
+        <button>Add Server Template</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Bulk Add</h3>
+      <p class="small">Një server për rresht. Format: <code>Emri | http://host:port</code> ose vetëm <code>http://host:port</code></p>
+      <form method="post">
+        <input type="hidden" name="action" value="bulk">
+        <textarea name="bulk_servers" rows="7" placeholder="Server 1 | http://host1.com:80&#10;Server 2 | http://host2.com:8080"></textarea>
+        <button>Add Bulk Servers</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Saved Servers</h3>
+      <table>
+        <tr><th>Name</th><th>Server</th><th>Created</th><th>Actions</th></tr>
+        {rows or '<tr><td colspan="4">Ende nuk ka serverë.</td></tr>'}
+      </table>
+    </div>
+    """
+    return admin_page(body)
+
+
+@app.route("/servers/delete/<sid>")
+def server_delete(sid):
+    if not login_required():
+        return redirect("/login")
+    servers = [s for s in load_server_templates() if s.get("id") != sid]
+    save_server_templates(servers)
+    return redirect("/servers")
+
+
+@app.route("/servers/test/<sid>")
+def server_test(sid):
+    if not login_required():
+        return redirect("/login")
+    servers = load_server_templates()
+    server = next((s for s in servers if s.get("id") == sid), None)
+    if not server:
+        abort(404)
+
+    clients = load_clients()
+    results = []
+    for slug, c in sorted(clients.items()):
+        username = c.get("username") or ""
+        password = c.get("password") or ""
+        if not username or not password:
+            try:
+                p = parse_m3u_link(c.get("m3u_link", ""))
+                username = p["username"]
+                password = p["password"]
+            except Exception:
+                pass
+        if username and password:
+            res = test_server_template(server.get("server"), username, password)
+            res["client"] = c.get("name", slug)
+            res["slug"] = slug
+            results.append(res)
+
+    if not results:
+        res = test_server_template(server.get("server"))
+        results.append(res)
+
+    rows = ""
+    for r in results:
+        cls = "ok" if r.get("api_ok") or r.get("root_ok") else "bad"
+        rows += f"""
+        <tr>
+          <td>{r.get('client','-')}<br><span class="small">{r.get('slug','')}</span></td>
+          <td class="{cls}">{'OK' if cls == 'ok' else 'Problem'}</td>
+          <td>{r.get('status','')}</td>
+          <td>{r.get('expiry','')}</td>
+          <td>{r.get('connections','')}</td>
+          <td>{r.get('ip','')}</td>
+          <td><pre>{json.dumps(r, ensure_ascii=False, indent=2)}</pre></td>
+        </tr>
+        """
+
+    body = f"""
+    <div class="card">
+      <h2>Test Server: {server.get('name')}</h2>
+      <p>Server: <code>{server.get('server')}</code></p>
+      <a class="btn gray" href="/servers">Back</a>
+      <table>
+        <tr><th>Client</th><th>Root/API</th><th>Status</th><th>Expiry</th><th>Conn</th><th>IP</th><th>Raw</th></tr>
+        {rows}
+      </table>
+    </div>
+    """
+    return admin_page(body)
+
+
+@app.route("/servers/apply/<sid>", methods=["POST"])
+def server_apply(sid):
+    if not login_required():
+        return redirect("/login")
+    client_slug = request.form.get("client_slug")
+    servers = load_server_templates()
+    server = next((s for s in servers if s.get("id") == sid), None)
+    if not server or not client_slug:
+        abort(404)
+
+    clients = load_clients()
+    c = clients.get(client_slug)
+    if not c:
+        abort(404)
+
+    new_server = normalize_base(server.get("server"))
+    c["server"] = new_server
+
+    if c.get("mode") != "template":
+        try:
+            p = parse_m3u_link(c.get("m3u_link", ""))
+            c["username"] = p["username"]
+            c["password"] = p["password"]
+        except Exception:
+            pass
+        c["mode"] = "template"
+
+    if c.get("username") and c.get("password"):
+        c["m3u_link"] = f"{new_server.rstrip('/')}/get.php?username={c.get('username')}&password={c.get('password')}&type=m3u_plus&output={c.get('output','ts')}"
+
+    clients[client_slug] = c
+    save_clients(clients)
+    cp = cache_path(client_slug)
+    if cp.exists():
+        cp.unlink()
+    return redirect(f"/edit/{client_slug}")
+
+
 @app.route("/status")
 def status_page():
     if not login_required():
@@ -1227,7 +1519,8 @@ def backup_all():
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
-        "note": "Backup contains clients and master template. Keep private."
+        "server_templates": load_server_templates(),
+        "note": "Backup contains clients, master template and server templates. Keep private."
     }
     return Response(
         json.dumps(data, ensure_ascii=False, indent=2),
@@ -1250,6 +1543,7 @@ def restore_backup():
             data = json.loads(raw)
             clients = data.get("clients", {})
             master_template = data.get("master_template", "")
+            server_templates = data.get("server_templates", [])
             if not isinstance(clients, dict):
                 raise ValueError("Backup clients nuk është valid.")
             if master_template and "#EXTM3U" not in master_template[:1000]:
@@ -1257,6 +1551,8 @@ def restore_backup():
             save_clients(clients)
             if master_template:
                 save_template_text(master_template)
+            if isinstance(server_templates, list):
+                save_server_templates(server_templates)
             clear_all_cache()
             msg = "<p class='ok'>Restore u krye me sukses. Cache u pastrua.</p>"
         except Exception as e:
