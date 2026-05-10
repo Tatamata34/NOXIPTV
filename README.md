@@ -1,13 +1,12 @@
-# NOX IPTV V6.5 Stable Revert
+# NOX IPTV V6.6 VLC Icons
 
-Fix:
-- Reverted forced /live/*.m3u8 URL conversion.
-- Generated channel URLs are direct Xtream stream paths again:
-  http://host:port/user/pass/streamid
-- This should restore VLC/browser behavior from older versions.
-- Added /watch/debug to verify generated URLs.
-- Removed problematic Android onclick JS.
-- Keeps GitHub backup, auto backup, logo, and modern UI.
+Changes:
+- Removed Android Alt, VLC Classic, Copy URL, Debug URLs buttons from /watch.
+- iPhone VLC button now uses a public single-channel .m3u playlist:
+  /c/<slug>/<channel_id>.m3u
+- Android VLC button remains intent:// direct stream.
+- Buttons now show VLC + iPhone/Android icons.
+- Compile tested OK.
 
 Render:
 Build: pip install -r requirements.txt
