@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.5
+NOX IPTV CLOUD PANEL V7.7
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse, urljoin
 
 import requests
-from flask import Flask, Response, abort, redirect, render_template_string, request, session, url_for
+from flask import stream_with_context, Flask, Response, abort, redirect, render_template_string, request, session, url_for
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", APP_DIR / "data"))
@@ -71,8 +71,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.5"
-API_VERSION = "v7.5"
+APP_VERSION = "V7.7"
+API_VERSION = "v7.7"
 
 
 HEADERS = {
@@ -652,7 +652,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.5</title>
+  <title>NOX IPTV V7.7</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -686,7 +686,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.5</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.7</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -725,7 +725,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.5</title>
+  <title>NOX IPTV V7.7</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -890,7 +890,7 @@ def dashboard():
 
     rows = ""
     for slug, c in sorted(clients.items()):
-        public_url = request.url_root.rstrip("/") + url_for("playlist", slug=slug)
+        public_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
         watch_url = request.url_root.rstrip("/") + "/watch"
         mode = c.get("mode", "source_link")
         fav = "★ " if c.get("favorite") else ""
@@ -1845,26 +1845,119 @@ def single_channel_playlist(slug, channel_id):
 
 
 
-@app.route("/playlist/<slug>.m3u")
-@app.route("/vlc-list/<slug>.m3u")
-def playlist_alias_for_vlc(slug):
+
+
+def build_proxy_playlist_for_client(slug):
     """
-    VLC-friendly full client playlist.
-    Same playlist as /p/<slug>.m3u, but with explicit headers.
+    Build M3U where every stream URL points to NOX proxy.
+    VLC/browser then use the same relay engine instead of direct provider URLs.
+    """
+    text = get_playlist_for_client(slug, force_refresh=False)
+    items = parse_m3u_items(text)
+    base = request.url_root.rstrip("/")
+    lines = ["#EXTM3U"]
+    for idx, it in enumerate(items):
+        extinf = it.get("extinf") or f'#EXTINF:-1,{it.get("name","Channel")}'
+        lines.append(extinf)
+        lines.append(f"{base}/proxy/{slug}/{idx}")
+    return "\n".join(lines) + "\n"
+
+
+@app.route("/proxy/<slug>/<int:channel_id>")
+def proxy_channel(slug, channel_id):
+    """
+    Public proxy stream for VLC playlist.
+    It relays the real provider stream with VLC-friendly headers.
     """
     try:
         text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("Channel not found", status=404)
+
+        stream_url = items[channel_id]["url"]
+        upstream_headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+            "Icy-MetaData": "0",
+        }
+
+        last_error = None
+        upstream = None
+        for _attempt in range(3):
+            try:
+                upstream = requests.get(
+                    stream_url,
+                    headers=upstream_headers,
+                    stream=True,
+                    timeout=(10, None),
+                    allow_redirects=True,
+                )
+                if upstream.status_code < 500:
+                    break
+            except Exception as e:
+                last_error = e
+                upstream = None
+                time.sleep(0.7)
+
+        if upstream is None:
+            return Response(f"Proxy upstream error: {last_error}", status=502)
+
+        content_type = upstream.headers.get("Content-Type", "video/mp2t")
+        low = content_type.lower()
+        if "text" in low or "html" in low:
+            content_type = "video/mp2t"
+
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    upstream.close()
+                except Exception:
+                    pass
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype=content_type,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Access-Control-Allow-Origin": "*",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+            direct_passthrough=True,
+        )
+    except Exception as e:
+        return Response(f"Proxy error: {e}", status=500)
+
+
+@app.route("/vlc-list/<slug>.m3u")
+@app.route("/playlist/<slug>.m3u")
+def playlist_alias_for_vlc(slug):
+    """
+    VLC-friendly full playlist with PROXY stream URLs.
+    This is the key V7.7 change.
+    """
+    try:
+        text = build_proxy_playlist_for_client(slug)
         return Response(
             text,
             mimetype="audio/x-mpegurl",
             headers={
                 "Content-Type": "audio/x-mpegurl; charset=utf-8",
-                "Content-Disposition": f"inline; filename={slug}.m3u",
+                "Content-Disposition": f"inline; filename={slug}-proxy.m3u",
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
                 "Expires": "0",
-                "Access-Control-Allow-Origin": "*"
-            }
+                "Access-Control-Allow-Origin": "*",
+            },
         )
     except Exception as e:
         return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
@@ -1983,8 +2076,8 @@ def watch_debug():
         return client_page(f"""
         <div class="top"><h2>NOX IPTV Debug</h2></div>
         <div class="wrap"><div class="player">
-          <h3>VLC Full Playlist Debug</h3>
-          <p>Full playlist: <code>{full_playlist}</code></p>
+          <h3>VLC Proxy Playlist Debug</h3>
+          <p>Proxy playlist: <code>{full_playlist}</code></p>
           <p>iPhone launcher: <code>{iphone}</code></p>
           <p>Android launcher: <code>{android}</code></p>
           <p><a class="btn" href="{full_playlist}">Open playlist file</a>
@@ -2331,7 +2424,7 @@ def api_login():
                 "ok": True,
                 "slug": slug,
                 "name": c.get("name", slug),
-                "m3u_url": request.url_root.rstrip("/") + url_for("playlist", slug=slug),
+                "m3u_url": request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug),
             }
     return {"ok": False, "error": "Login gabim"}, 401
 
