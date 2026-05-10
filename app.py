@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.8.1
+NOX IPTV CLOUD PANEL V7.8.2
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -71,8 +71,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.8.1"
-API_VERSION = "v7.8.1"
+APP_VERSION = "V7.8.2"
+API_VERSION = "v7.8.2"
 
 
 HEADERS = {
@@ -652,7 +652,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.8.1</title>
+  <title>NOX IPTV V7.8.2</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -686,7 +686,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.8.1</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.8.2</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -725,7 +725,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.8.1</title>
+  <title>NOX IPTV V7.8.2</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1813,55 +1813,6 @@ def watch_login():
 
 
 
-@app.route("/c/<slug>/<int:channel_id>.m3u")
-def single_channel_playlist(slug, channel_id):
-    """Clean single-channel M3U for VLC."""
-    try:
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="audio/x-mpegurl", status=404)
-        it = items[channel_id]
-        name = it.get("name", "Channel")
-        group = it.get("group", "")
-        url = it.get("url", "")
-        body = "#EXTM3U\n"
-        body += f'#EXTINF:-1 tvg-name="{name}" group-title="{group}",{name}\n'
-        body += f"{url}\n"
-        return Response(
-            body,
-            mimetype="audio/x-mpegurl",
-            headers={
-                "Content-Type": "audio/x-mpegurl; charset=utf-8",
-                "Content-Disposition": f"inline; filename={slug}-{channel_id}.m3u",
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Access-Control-Allow-Origin": "*"
-            }
-        )
-    except Exception as e:
-        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
-
-
-
-
-
-
-
-def build_proxy_playlist_for_client(slug):
-    """
-    Build M3U where every stream URL points to NOX proxy.
-    VLC/browser then use the same relay engine instead of direct provider URLs.
-    """
-    text = get_playlist_for_client(slug, force_refresh=False)
-    items = parse_m3u_items(text)
-    base = request.url_root.rstrip("/")
-    lines = ["#EXTM3U"]
-    for idx, it in enumerate(items):
-        extinf = it.get("extinf") or f'#EXTINF:-1,{it.get("name","Channel")}'
-        lines.append(extinf)
-        lines.append(f"{base}/proxy/{slug}/{idx}")
-    return "\n".join(lines) + "\n"
-
 
 @app.route("/proxy/<slug>/<int:channel_id>")
 def proxy_channel(slug, channel_id):
@@ -1963,22 +1914,56 @@ def playlist_alias_for_vlc(slug):
         return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
 
 
+
+@app.route("/c/<slug>/<int:channel_id>.m3u")
+def selected_channel_m3u(slug, channel_id):
+    """
+    Single-channel M3U for VLC.
+    This keeps VLC on the selected channel instead of first channel in full list.
+    """
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="audio/x-mpegurl", status=404)
+
+        it = items[channel_id]
+        name = it.get("name", "Channel")
+        group = it.get("group", "")
+        logo = it.get("logo", "")
+        url = it.get("url", "")
+
+        ext = f'#EXTINF:-1 tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}'
+        body = "#EXTM3U\n" + ext + "\n" + url + "\n"
+
+        return Response(
+            body,
+            mimetype="audio/x-mpegurl",
+            headers={
+                "Content-Type": "audio/x-mpegurl; charset=utf-8",
+                "Content-Disposition": f"inline; filename={slug}-{channel_id}.m3u",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    except Exception as e:
+        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
+
+
 @app.route("/vlc/iphone/<slug>/<int:channel_id>")
 @app.route("/vlc/iphone/<slug>")
 def open_vlc_iphone(slug, channel_id=None):
     """
-    iPhone VLC direct launcher.
-    Opens the SELECTED channel, not the full playlist, using confirmed Method 2.
+    iPhone VLC launcher.
+    Uses confirmed Method 2, but sends a SINGLE-CHANNEL M3U.
     """
     try:
         if channel_id is None:
             return redirect("/watch/home")
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("Channel not found", status=404)
-        stream_url = items[channel_id]["url"]
-        enc = requests.utils.quote(stream_url, safe="")
+        one_url = request.url_root.rstrip("/") + url_for("selected_channel_m3u", slug=slug, channel_id=channel_id)
+        enc = requests.utils.quote(one_url, safe="")
         method_2 = "vlc-x-callback://x-callback-url/stream?url=" + enc
         return redirect(method_2)
     except Exception as e:
@@ -1989,20 +1974,16 @@ def open_vlc_iphone(slug, channel_id=None):
 @app.route("/vlc/android/<slug>")
 def open_vlc_android(slug, channel_id=None):
     """
-    Android VLC direct launcher.
-    Opens the SELECTED channel, not the full playlist, using confirmed Intent Video.
+    Android VLC launcher.
+    Uses confirmed Intent Video, but sends a SINGLE-CHANNEL M3U.
     """
     try:
         if channel_id is None:
             return redirect("/watch/home")
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("Channel not found", status=404)
-        stream_url = items[channel_id]["url"]
-        p = urlparse(stream_url)
-        clean = stream_url.replace("https://", "").replace("http://", "")
-        scheme = p.scheme or "http"
+        one_url = request.url_root.rstrip("/") + url_for("selected_channel_m3u", slug=slug, channel_id=channel_id)
+        p = urlparse(one_url)
+        clean = one_url.replace("https://", "").replace("http://", "")
+        scheme = p.scheme or "https"
         intent_video = (
             "intent://" + clean +
             "#Intent;scheme=" + scheme +
@@ -2139,7 +2120,7 @@ def watch_home():
         <button class="btn gray cat" onclick="setTarget(1)">Target Screen 1</button>
         <button class="btn gray cat" onclick="setTarget(2)">Target Screen 2</button>
         <button class="btn gray cat" onclick="toggleTwo()">1 / 2 Ekrane</button>
-        <div class="helpbox">Primare: iPhone. VLC hap kanalin e zgjedhur të klientit dhe para hapjes ndalet browser-i.</div>
+        <div class="helpbox">Primare: iPhone. VLC hap single-channel M3U të kanalit të zgjedhur të klientit dhe para hapjes ndalet browser-i.</div>
       </div>
 
       <div>
@@ -2224,7 +2205,7 @@ def watch_home():
           return;
         }}
 
-        document.getElementById("hint").innerText = "Po ndalet browser player dhe po hapet kanali i zgjedhur në VLC...";
+        document.getElementById("hint").innerText = "Po ndalet browser player dhe po hapet single-channel M3U i kanalit të zgjedhur në VLC...";
         stopAllScreens();
 
         setTimeout(()=>{{
