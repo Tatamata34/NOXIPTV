@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.1
+NOX IPTV CLOUD PANEL V7.2
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -38,12 +38,41 @@ DEVICE_FILE = DATA_DIR / "devices.json"
 CHANNEL_STATS_FILE = DATA_DIR / "channel_stats.json"
 SERVER_TEMPLATES_FILE = DATA_DIR / "server_templates.json"
 
+DEFAULT_SERVER_TEMPLATES = [
+    {"id": "default-0", "name": "Server 1", "server": "http://ktzcvyrm.sqhsm.com", "note": "default template", "created": "default"},
+    {"id": "default-1", "name": "Server 2", "server": "http://ktzcvyrm.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-2", "name": "Server 3", "server": "http://cytwuvie.msostvip.com", "note": "default template", "created": "default"},
+    {"id": "default-3", "name": "Server 4", "server": "http://cytwuvie.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-4", "name": "Server 5", "server": "http://augacsej.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-5", "name": "Server 6", "server": "http://augacsej.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-6", "name": "Server 7", "server": "http://bfvbdsnd.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-7", "name": "Server 8", "server": "http://bfvbdsnd.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-8", "name": "Server 9", "server": "http://kypzbyrd.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-9", "name": "Server 10", "server": "http://kypzbyrd.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-10", "name": "Server 11", "server": "http://pbmnnegi.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-11", "name": "Server 12", "server": "http://pbmnnegi.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-12", "name": "Server 13", "server": "http://mhpnrzxt.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-13", "name": "Server 14", "server": "http://mhpnrzxt.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-14", "name": "Server 15", "server": "http://zkyzefwp.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-15", "name": "Server 16", "server": "http://zkyzefwp.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-16", "name": "Server 17", "server": "http://zsbgkxja.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-17", "name": "Server 18", "server": "http://zsbgkxja.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-18", "name": "Server 19", "server": "http://nfpfcrji.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-19", "name": "Server 20", "server": "http://nfpfcrji.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-20", "name": "Server 21", "server": "http://myrcztdp.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-21", "name": "Server 22", "server": "http://myrcztdp.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-22", "name": "Server 23", "server": "http://zqvsqzyg.msostvip.com", "note": "default template", "created": "default"},
+    {"id": "default-23", "name": "Server 24", "server": "http://zqvsqzyg.meza.in", "note": "default template", "created": "default"},
+    {"id": "default-24", "name": "Server 25", "server": "http://egxbnjjg.qastertv.xyz", "note": "default template", "created": "default"},
+    {"id": "default-25", "name": "Server 26", "server": "http://egxbnjjg.smyia.com", "note": "default template", "created": "default"}
+]
+
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.1"
-API_VERSION = "v7.1"
+APP_VERSION = "V7.2"
+API_VERSION = "v7.2"
 
 
 HEADERS = {
@@ -623,7 +652,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.1</title>
+  <title>NOX IPTV V7.2</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -657,7 +686,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.1</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.2</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -696,7 +725,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.1</title>
+  <title>NOX IPTV V7.2</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -750,6 +779,14 @@ def load_server_templates():
                 return data
         except Exception:
             pass
+
+    defaults = DEFAULT_SERVER_TEMPLATES if "DEFAULT_SERVER_TEMPLATES" in globals() else []
+    if defaults:
+        try:
+            SERVER_TEMPLATES_FILE.write_text(json.dumps(defaults, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        return defaults
     return []
 
 
@@ -1272,6 +1309,7 @@ def servers_page():
     body = f"""
     <div class="card">
       <h2>Server Templates</h2>
+      <p><a class="btn green" href="/servers/test-all">TEST ALL</a></p>
       <p class="small">Këtu i ruan serverët si template, i teston, dhe pastaj zgjedh cilit klient t'ia vendosësh.</p>
       {msg}
       <form method="post">
@@ -1314,6 +1352,103 @@ def server_delete(sid):
     servers = [s for s in load_server_templates() if s.get("id") != sid]
     save_server_templates(servers)
     return redirect("/servers")
+
+
+
+@app.route("/servers/test-all")
+def servers_test_all():
+    if not login_required():
+        return redirect("/login")
+
+    servers = load_server_templates()
+    clients = load_clients()
+
+    # Choose credentials from selected client if provided, otherwise first client with username/password.
+    selected_slug = request.args.get("client_slug", "")
+    selected_client = clients.get(selected_slug) if selected_slug else None
+    if not selected_client:
+        selected_client = None
+        for _slug, _c in sorted(clients.items()):
+            if _c.get("username") and _c.get("password"):
+                selected_slug = _slug
+                selected_client = _c
+                break
+            try:
+                p = parse_m3u_link(_c.get("m3u_link", ""))
+                selected_slug = _slug
+                selected_client = dict(_c)
+                selected_client["username"] = p["username"]
+                selected_client["password"] = p["password"]
+                break
+            except Exception:
+                pass
+
+    username = ""
+    password = ""
+    client_name = "-"
+    if selected_client:
+        client_name = selected_client.get("name", selected_slug)
+        username = selected_client.get("username", "")
+        password = selected_client.get("password", "")
+        if not username or not password:
+            try:
+                p = parse_m3u_link(selected_client.get("m3u_link", ""))
+                username = p["username"]
+                password = p["password"]
+            except Exception:
+                pass
+
+    results = []
+    for s in servers:
+        r = test_server_template(s.get("server"), username, password)
+        r["id"] = s.get("id")
+        r["name"] = s.get("name")
+        r["note"] = s.get("note", "")
+        results.append(r)
+
+    ok_count = sum(1 for r in results if r.get("api_ok") or r.get("root_ok"))
+    rows = ""
+    for r in results:
+        ok = bool(r.get("api_ok") or r.get("root_ok"))
+        cls = "ok" if ok else "bad"
+        badge = "KALON" if ok else "NUK KALON"
+        rows += f"""
+        <tr style="background:{'#dcfce7' if ok else '#fee2e2'}">
+          <td><b>{r.get('name')}</b><br><span class="small">{r.get('note','')}</span></td>
+          <td><code>{r.get('server')}</code></td>
+          <td class="{cls}"><b>{badge}</b></td>
+          <td>{r.get('status','')}</td>
+          <td>{r.get('expiry','')}</td>
+          <td>{r.get('connections','')}</td>
+          <td>{r.get('ip','')}</td>
+          <td><a class="btn gray" href="/servers/test/{r.get('id')}">Details</a></td>
+        </tr>
+        """
+
+    client_options = "".join(
+        f'<option value="{slug}" {"selected" if slug == selected_slug else ""}>{c.get("name", slug)} ({slug})</option>'
+        for slug, c in sorted(clients.items())
+    )
+
+    body = f"""
+    <div class="card">
+      <h2>TEST ALL Server Templates</h2>
+      <p class="small">Testuar me klientin: <b>{client_name}</b>. Kaluan: <b>{ok_count}/{len(results)}</b></p>
+      <form method="get" action="/servers/test-all">
+        <label>Zgjedh klientin për username/password test</label>
+        <select name="client_slug">{client_options}</select>
+        <button>Test All Again</button>
+        <a class="btn gray" href="/servers">Back</a>
+      </form>
+    </div>
+    <div class="card">
+      <table>
+        <tr><th>Name</th><th>Server</th><th>Result</th><th>Status</th><th>Expiry</th><th>Conn</th><th>IP</th><th>Details</th></tr>
+        {rows or '<tr><td colspan="8">Nuk ka serverë.</td></tr>'}
+      </table>
+    </div>
+    """
+    return admin_page(body)
 
 
 @app.route("/servers/test/<sid>")
@@ -1709,45 +1844,32 @@ def single_channel_playlist(slug, channel_id):
 
 @app.route("/vlc/iphone/<slug>/<int:channel_id>")
 def open_vlc_iphone(slug, channel_id):
-    """iPhone VLC launcher. Primary uses raw direct URL; fallback param mode=m3u uses playlist."""
-    mode = request.args.get("mode", "direct")
-    try:
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("Channel not found", status=404)
-        direct_url = items[channel_id]["url"]
-        if mode == "m3u":
-            target = request.url_root.rstrip("/") + url_for("single_channel_playlist", slug=slug, channel_id=channel_id)
-        else:
-            target = direct_url
-        encoded = requests.utils.quote(target, safe="")
-        return redirect("vlc-x-callback://x-callback-url/stream?url=" + encoded)
-    except Exception as e:
-        return Response(f"VLC iPhone error: {e}", status=500)
+    """
+    iPhone VLC launcher.
+    Primary method: open full client playlist /p/<slug>.m3u because this is proven to work.
+    channel_id is kept only so the same watch button can call this endpoint.
+    """
+    playlist_url = request.url_root.rstrip("/") + url_for("playlist", slug=slug)
+    encoded = requests.utils.quote(playlist_url, safe="")
+    return redirect("vlc-x-callback://x-callback-url/stream?url=" + encoded)
 
 
 @app.route("/vlc/android/<slug>/<int:channel_id>")
 def open_vlc_android(slug, channel_id):
-    """Android VLC launcher. Primary uses raw direct URL; fallback param mode=m3u uses playlist."""
-    mode = request.args.get("mode", "direct")
-    try:
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("Channel not found", status=404)
-        direct_url = items[channel_id]["url"]
-        if mode == "m3u":
-            target = request.url_root.rstrip("/") + url_for("single_channel_playlist", slug=slug, channel_id=channel_id)
-        else:
-            target = direct_url
-        p = urlparse(target)
-        clean = target.replace("https://", "").replace("http://", "")
-        scheme = p.scheme or "http"
-        intent = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end"
-        return redirect(intent)
-    except Exception as e:
-        return Response(f"VLC Android error: {e}", status=500)
+    """
+    Android VLC launcher.
+    Primary method: open full client playlist /p/<slug>.m3u.
+    """
+    playlist_url = request.url_root.rstrip("/") + url_for("playlist", slug=slug)
+    p = urlparse(playlist_url)
+    clean = playlist_url.replace("https://", "").replace("http://", "")
+    scheme = p.scheme or "https"
+    intent = (
+        "intent://" + clean +
+        "#Intent;scheme=" + scheme +
+        ";package=org.videolan.vlc;type=audio/x-mpegurl;S.title=NOXIPTV;end"
+    )
+    return redirect(intent)
 
 
 @app.route("/watch/debug")
