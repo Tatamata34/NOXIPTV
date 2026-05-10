@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.2
+NOX IPTV CLOUD PANEL V7.3
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -71,8 +71,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.2"
-API_VERSION = "v7.2"
+APP_VERSION = "V7.3"
+API_VERSION = "v7.3"
 
 
 HEADERS = {
@@ -652,7 +652,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.2</title>
+  <title>NOX IPTV V7.3</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -686,7 +686,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.2</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.3</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -725,7 +725,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.2</title>
+  <title>NOX IPTV V7.3</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1842,25 +1842,54 @@ def single_channel_playlist(slug, channel_id):
         return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
 
 
+
+
+
+@app.route("/playlist/<slug>.m3u")
+@app.route("/vlc-list/<slug>.m3u")
+def playlist_alias_for_vlc(slug):
+    """
+    VLC-friendly full client playlist.
+    Same playlist as /p/<slug>.m3u, but with explicit headers.
+    """
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        return Response(
+            text,
+            mimetype="audio/x-mpegurl",
+            headers={
+                "Content-Type": "audio/x-mpegurl; charset=utf-8",
+                "Content-Disposition": f"inline; filename={slug}.m3u",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    except Exception as e:
+        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
+
+
 @app.route("/vlc/iphone/<slug>/<int:channel_id>")
-def open_vlc_iphone(slug, channel_id):
+@app.route("/vlc/iphone/<slug>")
+def open_vlc_iphone(slug, channel_id=None):
     """
     iPhone VLC launcher.
-    Primary method: open full client playlist /p/<slug>.m3u because this is proven to work.
-    channel_id is kept only so the same watch button can call this endpoint.
+    Always opens the COMPLETE client playlist, not a single channel.
     """
-    playlist_url = request.url_root.rstrip("/") + url_for("playlist", slug=slug)
+    playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
     encoded = requests.utils.quote(playlist_url, safe="")
     return redirect("vlc-x-callback://x-callback-url/stream?url=" + encoded)
 
 
 @app.route("/vlc/android/<slug>/<int:channel_id>")
-def open_vlc_android(slug, channel_id):
+@app.route("/vlc/android/<slug>")
+def open_vlc_android(slug, channel_id=None):
     """
     Android VLC launcher.
-    Primary method: open full client playlist /p/<slug>.m3u.
+    Always opens the COMPLETE client playlist, not a single channel.
     """
-    playlist_url = request.url_root.rstrip("/") + url_for("playlist", slug=slug)
+    playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
     p = urlparse(playlist_url)
     clean = playlist_url.replace("https://", "").replace("http://", "")
     scheme = p.scheme or "https"
@@ -1877,21 +1906,34 @@ def watch_debug():
     if not client_login_required():
         return redirect("/watch")
     slug = session["client_slug"]
-    text = get_playlist_for_client(slug, force_refresh=True)
-    items = parse_m3u_items(text)[:30]
-    rows = ""
-    for idx, it in enumerate(items):
-        direct = it.get("url")
-        iphone = request.url_root.rstrip("/") + url_for("open_vlc_iphone", slug=slug, channel_id=idx)
-        android = request.url_root.rstrip("/") + url_for("open_vlc_android", slug=slug, channel_id=idx)
-        rows += f"<tr><td>{idx}</td><td>{it.get('name')}</td><td><code>{direct}</code><br><small>iPhone: <code>{iphone}</code></small><br><small>Android: <code>{android}</code></small></td></tr>"
-    return client_page(f"""
-    <div class="top"><h2>NOX IPTV Debug</h2></div>
-    <div class="wrap"><div class="player">
-    <h3>Generated URLs</h3><table>{rows}</table>
-    <p><a class="btn" href="/watch/home">Back</a></p>
-    </div></div>
-    """)
+    try:
+        text = get_playlist_for_client(slug, force_refresh=True)
+        items = parse_m3u_items(text)[:30]
+        full_playlist = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
+        iphone = request.url_root.rstrip("/") + url_for("open_vlc_iphone", slug=slug)
+        android = request.url_root.rstrip("/") + url_for("open_vlc_android", slug=slug)
+
+        rows = ""
+        for idx, it in enumerate(items):
+            rows += f"<tr><td>{idx}</td><td>{it.get('name')}</td><td><code>{it.get('url')}</code></td></tr>"
+
+        return client_page(f"""
+        <div class="top"><h2>NOX IPTV Debug</h2></div>
+        <div class="wrap"><div class="player">
+          <h3>VLC Full Playlist Debug</h3>
+          <p>Full playlist: <code>{full_playlist}</code></p>
+          <p>iPhone launcher: <code>{iphone}</code></p>
+          <p>Android launcher: <code>{android}</code></p>
+          <p><a class="btn" href="{full_playlist}">Open playlist file</a>
+             <a class="btn gray" href="{iphone}">Test iPhone VLC</a>
+             <a class="btn gray" href="{android}">Test Android VLC</a>
+             <a class="btn gray" href="/watch/home">Back</a></p>
+          <h3>First 30 generated channel URLs</h3>
+          <table>{rows}</table>
+        </div></div>
+        """)
+    except Exception as e:
+        return client_page(f"<div class='top'><h2>Debug</h2></div><div class='wrap'><div class='player'>Error: {e}</div></div>")
 
 
 @app.route("/watch/logout")
@@ -1984,7 +2026,7 @@ def watch_home():
         <button class="btn gray cat" onclick="setTarget(1)">Target Screen 1</button>
         <button class="btn gray cat" onclick="setTarget(2)">Target Screen 2</button>
         <button class="btn gray cat" onclick="toggleTwo()">1 / 2 Ekrane</button>
-        <div class="helpbox">Primare: iPhone. Para VLC, player-i ndalet automatikisht për ta liruar lidhjen.</div>
+        <div class="helpbox">Primare: iPhone. VLC hap listën komplet të klientit dhe para hapjes ndalet browser-i.</div>
       </div>
 
       <div>
@@ -2001,7 +2043,7 @@ def watch_home():
             <button class="btn gray vlcbtn" onclick="openVlc('android')"><span class="vlcico">🎥</span><span class="vlcico">🤖</span> VLC Android</button>
             <a class="btn gray" href="/watch/debug">Debug</a>
           </div>
-          <p class="hint" id="hint">Kliko kanal. Browser provon në ekran; VLC ndalon browser-in para hapjes.</p>
+          <p class="hint" id="hint">Kliko kanal. VLC hap listën komplet të klientit, jo vetëm kanalin.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -2068,13 +2110,15 @@ def watch_home():
           alert("Zgjedh një kanal së pari.");
           return;
         }}
-        document.getElementById("hint").innerText = "Po ndalet browser player dhe po hapet VLC...";
+
+        document.getElementById("hint").innerText = "Po ndalet browser player dhe po hapet lista komplet në VLC...";
         stopAllScreens();
+
         setTimeout(()=>{{
           if(kind === "iphone") {{
-            window.location.href = "/vlc/iphone/{slug}/" + ch.i;
+            window.location.href = "/vlc/iphone/{slug}";
           }} else {{
-            window.location.href = "/vlc/android/{slug}/" + ch.i;
+            window.location.href = "/vlc/android/{slug}";
           }}
         }}, 900);
       }}
