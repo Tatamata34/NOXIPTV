@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.3
+NOX IPTV CLOUD PANEL V7.4
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -71,8 +71,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.3"
-API_VERSION = "v7.3"
+APP_VERSION = "V7.4"
+API_VERSION = "v7.4"
 
 
 HEADERS = {
@@ -652,7 +652,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.3</title>
+  <title>NOX IPTV V7.4</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -686,7 +686,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.3</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.4</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -725,7 +725,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.3</title>
+  <title>NOX IPTV V7.4</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1873,32 +1873,71 @@ def playlist_alias_for_vlc(slug):
 @app.route("/vlc/iphone/<slug>/<int:channel_id>")
 @app.route("/vlc/iphone/<slug>")
 def open_vlc_iphone(slug, channel_id=None):
-    """
-    iPhone VLC launcher.
-    Always opens the COMPLETE client playlist, not a single channel.
-    """
     playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
-    encoded = requests.utils.quote(playlist_url, safe="")
-    return redirect("vlc-x-callback://x-callback-url/stream?url=" + encoded)
+    enc = requests.utils.quote(playlist_url, safe="")
+    method_a = "vlc://x-callback-url/stream?url=" + enc
+    method_b = "vlc-x-callback://x-callback-url/stream?url=" + enc
+    method_c = "vlc://" + enc
+    return client_page(f"""
+    <div class="top"><h2>NOX IPTV VLC iPhone</h2></div>
+    <div class="wrap">
+      <div class="player">
+        <h3>Hap listën komplet në VLC</h3>
+        <p class="hint">Nëse nuk hapet automatikisht, kliko Method 1. Nëse jo, provo Method 2 ose 3.</p>
+        <p>
+          <a class="btn" href="{method_a}">🎥  VLC iPhone Method 1</a>
+          <a class="btn gray" href="{method_b}">Method 2</a>
+          <a class="btn gray" href="{method_c}">Method 3</a>
+        </p>
+        <p>
+          <a class="btn gray" href="{playlist_url}">Open playlist file</a>
+          <button class="btn gray" onclick="navigator.clipboard.writeText('{playlist_url}').then(()=>alert('Playlist URL u kopjua'))">Copy playlist URL</button>
+          <a class="btn gray" href="/watch/home">Back</a>
+        </p>
+        <p class="hint"><code>{playlist_url}</code></p>
+      </div>
+    </div>
+    <script>
+      setTimeout(function() {{
+        window.location.href = "{method_a}";
+      }}, 500);
+    </script>
+    """)
 
 
 @app.route("/vlc/android/<slug>/<int:channel_id>")
 @app.route("/vlc/android/<slug>")
 def open_vlc_android(slug, channel_id=None):
-    """
-    Android VLC launcher.
-    Always opens the COMPLETE client playlist, not a single channel.
-    """
     playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
     p = urlparse(playlist_url)
     clean = playlist_url.replace("https://", "").replace("http://", "")
     scheme = p.scheme or "https"
-    intent = (
-        "intent://" + clean +
-        "#Intent;scheme=" + scheme +
-        ";package=org.videolan.vlc;type=audio/x-mpegurl;S.title=NOXIPTV;end"
-    )
-    return redirect(intent)
+    intent = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=audio/x-mpegurl;S.title=NOXIPTV;end"
+    vlc_scheme = "vlc://" + requests.utils.quote(playlist_url, safe="")
+    return client_page(f"""
+    <div class="top"><h2>NOX IPTV VLC Android</h2></div>
+    <div class="wrap">
+      <div class="player">
+        <h3>Hap listën komplet në VLC</h3>
+        <p class="hint">Nëse nuk hapet automatikisht, kliko Method 1. Nëse jo, Method 2.</p>
+        <p>
+          <a class="btn" href="{intent}">🎥 🤖 VLC Android Method 1</a>
+          <a class="btn gray" href="{vlc_scheme}">Method 2</a>
+        </p>
+        <p>
+          <a class="btn gray" href="{playlist_url}">Open playlist file</a>
+          <button class="btn gray" onclick="navigator.clipboard.writeText('{playlist_url}').then(()=>alert('Playlist URL u kopjua'))">Copy playlist URL</button>
+          <a class="btn gray" href="/watch/home">Back</a>
+        </p>
+        <p class="hint"><code>{playlist_url}</code></p>
+      </div>
+    </div>
+    <script>
+      setTimeout(function() {{
+        window.location.href = "{intent}";
+      }}, 500);
+    </script>
+    """)
 
 
 @app.route("/watch/debug")
