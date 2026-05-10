@@ -391,7 +391,7 @@ def client_login_required():
 
 
 
-# ---------------- V6.1 FULL helpers ----------------
+# ---------------- V6.1.1 FULL helpers ----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -1357,6 +1357,10 @@ def watch_home():
       let current = {{1:null,2:null}};
       let hlsMap = {{1:null,2:null}};
       let tsMap = {{1:null,2:null}};
+      let watchdog = {{1:null,2:null}};
+      let reconnects = {{1:0,2:0}};
+      let manualStop = {{1:false,2:false}};
+      let lastTime = {{1:0,2:0}};
       const favKey = "nox_favorites_{slug}";
       const recentKey = "nox_recent_{slug}";
       function getFavs() {{ return JSON.parse(localStorage.getItem(favKey)||"[]"); }}
@@ -1377,18 +1381,17 @@ def watch_home():
         const clean = ch.url.replace(/^https?:\/\//,"");
         const scheme = ch.url.startsWith("https://") ? "https" : "http";
 
-        // iPhone VLC works best with x-callback encoded URL
-        document.getElementById("vlcIphone").href =
-          "vlc-x-callback://x-callback-url/stream?url=" + encoded;
+        const vi = document.getElementById("vlcIphone");
+        const va = document.getElementById("vlcAndroid");
+        const vc = document.getElementById("vlcClassic");
 
-        // Android VLC works best with intent:// and correct original scheme
-        document.getElementById("vlcAndroid").href =
-          "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
-
-        // Classic fallback
-        document.getElementById("vlcClassic").href = "vlc://" + ch.url;
+        if (vi) vi.href = "vlc-x-callback://x-callback-url/stream?url=" + encoded;
+        if (va) va.href = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
+        if (vc) vc.href = "vlc://" + ch.url;
       }}
       function stopScreen(n) {{
+        manualStop[n] = true;
+        if (watchdog[n]) {{ clearInterval(watchdog[n]); watchdog[n] = null; }}
         const v=document.getElementById("video"+n);
         if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}hlsMap[n]=null;}}
         if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}tsMap[n]=null;}}
@@ -1397,16 +1400,16 @@ def watch_home():
       }}
       function stopTarget() {{ stopScreen(target); }}
 
-      function setBadge(n, text, cls) {
+      function setBadge(n, text, cls) {{
         const b = document.getElementById("badge"+n);
         b.className = "badge " + (cls || "");
         b.innerText = text;
-      }
+      }}
 
-      function startWatchdog(n) {
+      function startWatchdog(n) {{
         if (watchdog[n]) clearInterval(watchdog[n]);
         lastTime[n] = document.getElementById("video"+n).currentTime || 0;
-        watchdog[n] = setInterval(() => {
+        watchdog[n] = setInterval(() => {{
           const v = document.getElementById("video"+n);
           const ch = current[n];
           if (!ch || manualStop[n]) return;
@@ -1416,20 +1419,20 @@ def watch_home():
           const ended = v.ended || (isFinite(v.duration) && v.duration > 0 && now >= v.duration - 0.4);
           const badState = v.readyState === 0;
 
-          if (stuck || ended || badState) {
+          if (stuck || ended || badState) {{
             reconnects[n] += 1;
             setBadge(n, "RELOAD " + reconnects[n], "");
             document.getElementById("hint").innerText = "Stream u ndal. Po rihapet automatikisht...";
-            if (reconnects[n] <= 6) {
+            if (reconnects[n] <= 6) {{
               playBrowser(ch, n, true);
-            } else {
+            }} else {{
               setBadge(n, "VLC", "fail");
               document.getElementById("hint").innerText = "Browser po e ndërpret këtë stream. Përdor VLC.";
-            }
-          }
+            }}
+          }}
           lastTime[n] = now;
-        }, 7000);
-      }
+        }}, 7000);
+      }}
 
       function playChannel(ch) {{
         current[target]=ch; markRecent(ch); updateVlc(ch); reconnects[target]=0; manualStop[target]=false;
@@ -1529,7 +1532,7 @@ def watch_home():
         }}
       }}
 
-      function retryCurrent() {{ if(current[target])playBrowser(current[target],target); }}
+      function retryCurrent() {{ if(current[target]) {{ manualStop[target]=false; reconnects[target]=0; playBrowser(current[target],target); }} }}
       function render() {{
         const q=document.getElementById("search").value.toLowerCase(), favs=getFavs(), rec=getRecent(), box=document.getElementById("channels");
         box.innerHTML="";
@@ -1837,7 +1840,7 @@ def watch_capabilities():
     return {
         "ok": True,
         "browser_methods": ["hls_proxy", "hls_direct", "mpegts_proxy", "direct_video", "proxy_direct_video"],
-        "note": "V6.1 tries all browser methods automatically before showing failure."
+        "note": "V6.1.1 tries all browser methods automatically before showing failure."
     }
 
 @app.route("/health")
