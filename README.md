@@ -1,12 +1,12 @@
-# NOX IPTV V6.6 VLC Icons
+# NOX IPTV V7.2 Server Templates + TEST ALL + VLC Playlist
 
-Changes:
-- Removed Android Alt, VLC Classic, Copy URL, Debug URLs buttons from /watch.
-- iPhone VLC button now uses a public single-channel .m3u playlist:
-  /c/<slug>/<channel_id>.m3u
-- Android VLC button remains intent:// direct stream.
-- Buttons now show VLC + iPhone/Android icons.
-- Compile tested OK.
+Added:
+- Your 26 servers are preloaded as server templates.
+- Admin /servers has TEST ALL button.
+- TEST ALL shows passing servers in green and failing in red.
+- Test can use selected client's username/password.
+- VLC iPhone and Android now open the full client playlist /p/<slug>.m3u,
+  because that method is confirmed to work.
 
 Render:
 Build: pip install -r requirements.txt
