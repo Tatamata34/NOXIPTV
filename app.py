@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V6.6
+NOX IPTV CLOUD PANEL V6.6.1
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -41,8 +41,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V6.6"
-API_VERSION = "v6.6"
+APP_VERSION = "V6.6.1"
+API_VERSION = "v6.6.1"
 
 
 HEADERS = {
@@ -626,7 +626,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.6</title>
+  <title>NOX IPTV V6.6.1</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -660,7 +660,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V6.6</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V6.6.1</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -698,7 +698,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.6</title>
+  <title>NOX IPTV V6.6.1</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1390,26 +1390,38 @@ def watch_login():
 def single_channel_playlist(slug, channel_id):
     """
     Public single-channel playlist for VLC mobile.
-    VLC iPhone often opens a .m3u playlist more reliably than raw TS URL.
+    VLC iPhone/Android often open a .m3u playlist more reliably than raw TS URL.
     """
     try:
         text = get_playlist_for_client(slug, force_refresh=False)
         items = parse_m3u_items(text)
         if channel_id < 0 or channel_id >= len(items):
             return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="audio/x-mpegurl", status=404)
+
         it = items[channel_id]
-        body = "#EXTM3U\n" + it["extinf"] + "\n" + it["url"] + "\n"
+        name = it.get("name", "Channel")
+        group = it.get("group", "")
+        url = it.get("url", "")
+        body = (
+            "#EXTM3U\n"
+            + f'#EXTINF:-1 tvg-name="{{name}}" group-title="{{group}}",{{name}}\n'
+            + f"{{url}}\n"
+        )
+
         return Response(
             body,
             mimetype="audio/x-mpegurl",
-            headers={
-                "Content-Disposition": f"inline; filename={slug}-{channel_id}.m3u",
-                "Cache-Control": "no-cache",
+            headers={{
+                "Content-Type": "audio/x-mpegurl; charset=utf-8",
+                "Content-Disposition": f"inline; filename={{slug}}-{{channel_id}}.m3u",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
                 "Access-Control-Allow-Origin": "*"
-            }
+            }}
         )
     except Exception as e:
-        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
+        return Response(f"#EXTM3U\n# ERROR: {{e}}\n", mimetype="audio/x-mpegurl", status=500)
 
 
 @app.route("/watch/debug")
@@ -1587,14 +1599,11 @@ def watch_home():
       function markRecent(ch) {{ let r=getRecent().filter(x=>x!==ch.i); r.unshift(ch.i); setRecent(r); }}
       function toggleFavorite() {{ const ch=current[target]; if(!ch)return; let f=getFavs(); if(f.includes(ch.i))f=f.filter(x=>x!==ch.i); else f.push(ch.i); setFavs(f); render(); }}
       function updateVlc(ch) {{
-        const directUrl = ch.url;
-        const encodedDirect = encodeURIComponent(directUrl);
-        const clean = directUrl.replace(/^https?:\/\//,"");
-        const scheme = directUrl.startsWith("https://") ? "https" : "http";
-
-        // iPhone: VLC hap më mirë një single-channel M3U sesa raw TS URL.
+        // VLC mobile works more reliably with a small .m3u playlist than raw stream URL.
         const singleM3u = window.location.origin + "/c/{slug}/" + ch.i + ".m3u";
         const encodedM3u = encodeURIComponent(singleM3u);
+        const cleanM3u = singleM3u.replace(/^https?:\/\//,"");
+        const schemeM3u = singleM3u.startsWith("https://") ? "https" : "http";
 
         const iphone = document.getElementById("vlcIphone");
         const android = document.getElementById("vlcAndroid1");
@@ -1604,7 +1613,7 @@ def watch_home():
         }}
 
         if (android) {{
-          android.href = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
+          android.href = "intent://" + cleanM3u + "#Intent;scheme=" + schemeM3u + ";package=org.videolan.vlc;type=audio/x-mpegurl;S.title=NOXIPTV;end";
         }}
       }}
 
