@@ -1536,20 +1536,21 @@ def watch_home():
       function markRecent(ch) {{ let r=getRecent().filter(x=>x!==ch.i); r.unshift(ch.i); setRecent(r); }}
       function toggleFavorite() {{ const ch=current[target]; if(!ch)return; let f=getFavs(); if(f.includes(ch.i))f=f.filter(x=>x!==ch.i); else f.push(ch.i); setFavs(f); render(); }}
 
-    function copyCurrentUrl() {
-        try {
-            let ch = current[target];
-            if (!ch) {
-                alert("Zgjedh kanal së pari.");
-                return;
-            }
-
-            navigator.clipboard.writeText(ch.url);
-            alert("URL u kopjua.");
-        } catch(e) {
-            console.log(e);
-        }
-    }
+      function copyCurrentUrl() {{
+          try {{
+              let ch = current[target];
+ 
+              if (!ch) {{
+                  alert("Zgjedh kanal së pari.");
+                  return;
+              }}
+ 
+              navigator.clipboard.writeText(ch.url);
+              alert("URL u kopjua.");
+          }} catch(e) {{
+              console.log(e);
+          }}
+      }}
 
       function openAndroidVlcNow() {
         const a = document.getElementById("vlcAndroid1");
