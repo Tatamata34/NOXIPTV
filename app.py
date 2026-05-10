@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V6.2
+NOX IPTV CLOUD PANEL V6.3
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -30,6 +30,8 @@ CACHE_DIR.mkdir(exist_ok=True)
 
 CLIENTS_FILE = DATA_DIR / "clients.json"
 TEMPLATE_FILE = DATA_DIR / "master_template.m3u"
+DEFAULT_BACKUP_FILE = APP_DIR / "noxiptv_backup.json"
+AUTO_BACKUP_FILE = DATA_DIR / "auto_backup.json"
 LOGS_FILE = DATA_DIR / "logs.jsonl"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 DEVICE_FILE = DATA_DIR / "devices.json"
@@ -39,8 +41,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V6.2"
-API_VERSION = "v6.2"
+APP_VERSION = "V6.3"
+API_VERSION = "v6.3"
 
 
 HEADERS = {
@@ -61,9 +63,75 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 
-# ---------------- Helpers ----------------
 
-def load_clients():
+# ---------------- Persistent Backup / GitHub Sync ----------------
+
+def build_full_backup():
+    return {
+        "version": API_VERSION if "API_VERSION" in globals() else "v6.3",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "clients": load_clients_raw(),
+        "master_template": get_template_text_raw(),
+        "note": "Auto backup from NOX IPTV panel."
+    }
+
+
+def save_auto_backup():
+    try:
+        data = build_full_backup()
+        AUTO_BACKUP_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        github_auto_sync(data)
+    except Exception as e:
+        print("auto backup problem:", e)
+
+
+def github_auto_sync(data):
+    """
+    Optional true GitHub overwrite.
+    Set these Render Environment variables:
+    GITHUB_TOKEN = github personal access token
+    GITHUB_REPO = username/repository
+    GITHUB_BRANCH = main
+    GITHUB_BACKUP_PATH = noxiptv_backup.json
+    """
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPO", "").strip()
+    branch = os.environ.get("GITHUB_BRANCH", "main").strip()
+    path = os.environ.get("GITHUB_BACKUP_PATH", "noxiptv_backup.json").strip()
+    if not token or not repo:
+        return
+
+    api = f"https://api.github.com/repos/{repo}/contents/{path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "NOX-IPTV-Panel"
+    }
+
+    sha = None
+    try:
+        r = requests.get(api, headers=headers, params={"ref": branch}, timeout=15)
+        if r.status_code == 200:
+            sha = r.json().get("sha")
+    except Exception:
+        pass
+
+    content = base64.b64encode(json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")).decode("ascii")
+    payload = {
+        "message": f"Auto backup clients {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "content": content,
+        "branch": branch
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        requests.put(api, headers=headers, json=payload, timeout=20)
+    except Exception as e:
+        print("github sync problem:", e)
+
+
+def load_clients_raw():
     if CLIENTS_FILE.exists():
         try:
             return json.loads(CLIENTS_FILE.read_text(encoding="utf-8"))
@@ -72,8 +140,39 @@ def load_clients():
     return {}
 
 
+def get_template_text_raw():
+    if TEMPLATE_FILE.exists():
+        return TEMPLATE_FILE.read_text(encoding="utf-8", errors="ignore")
+    return ""
+
+
+# ---------------- Helpers ----------------
+
+def load_clients():
+    if CLIENTS_FILE.exists():
+        try:
+            return json.loads(CLIENTS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    # First deploy: seed clients from repo backup file
+    if DEFAULT_BACKUP_FILE.exists():
+        try:
+            data = json.loads(DEFAULT_BACKUP_FILE.read_text(encoding="utf-8"))
+            clients = data.get("clients", {})
+            master = data.get("master_template", "")
+            if clients:
+                CLIENTS_FILE.write_text(json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8")
+            if master and not TEMPLATE_FILE.exists():
+                TEMPLATE_FILE.write_text(master, encoding="utf-8")
+            return clients
+        except Exception as e:
+            print("seed backup problem:", e)
+    return {}
+
+
 def save_clients(clients):
     CLIENTS_FILE.write_text(json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_auto_backup()
 
 
 def slugify(text):
@@ -143,6 +242,7 @@ def get_template_text():
 
 def save_template_text(text):
     TEMPLATE_FILE.write_text(text, encoding="utf-8")
+    save_auto_backup()
 
 
 def proxy_fetch_url(client, target_url):
@@ -280,18 +380,24 @@ def template_stats(text):
     }
 
 
-def replace_stream_credentials_in_url(url, new_base, username, password):
+def replace_stream_credentials_in_url(url, new_base, username, password, output="ts"):
     new_base = normalize_base(new_base)
     old = urlparse(url)
     nb = urlparse(new_base)
     parts = [x for x in old.path.split("/") if x]
+
+    stream_id = ""
     if len(parts) >= 3:
-        rest = parts[2:]
-        new_path = "/" + "/".join([username, password] + rest)
+        stream_id = parts[-1]
     elif len(parts) >= 1:
-        new_path = "/" + "/".join([username, password] + parts[-1:])
+        stream_id = parts[-1]
+    stream_id = stream_id.replace(".ts", "").replace(".m3u8", "")
+
+    if str(output).lower() == "m3u8":
+        new_path = "/" + "/".join(["live", username, password, stream_id + ".m3u8"])
     else:
-        new_path = f"/{username}/{password}"
+        new_path = "/" + "/".join([username, password, stream_id])
+
     return urlunparse((nb.scheme or old.scheme or "http", nb.netloc, new_path, "", "", ""))
 
 
@@ -303,7 +409,7 @@ def apply_template_for_client(template_text, client):
         raise ValueError("Për template mode duhen server, username dhe password te klienti.")
     items = parse_m3u_items(template_text)
     for item in items:
-        item["url"] = replace_stream_credentials_in_url(item["url"], server, username, password)
+        item["url"] = replace_stream_credentials_in_url(item["url"], server, username, password, client.get("output", "ts"))
     processed = rebuild_m3u(items)
     return process_m3u(processed, client)
 
@@ -394,7 +500,7 @@ def client_login_required():
 
 
 
-# ---------------- V6.2----------------
+# ---------------- V6.3----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -521,7 +627,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V6.2</title>
+  <title>NOX IPTV V6.3</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -555,7 +661,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style='font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;'>V6.2</span> V6.2 V6.2</h1>
+      <h1>NOX IPTV Panel <span style='font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;'>V6.3</span> V6.3 V6.3</h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -569,6 +675,8 @@ ADMIN_HTML = """
         <a class="btn gray" href="/bulk-refresh">Bulk Refresh</a>
         <a class="btn gray" href="/clear-cache">Clear Cache</a>
         <a class="btn dark" href="/backup">Backup All</a>
+        <a class="btn dark" href="/auto-backup">Auto Backup</a>
+        <a class="btn gray" href="/github-sync">GitHub Sync</a>
         <a class="btn dark" href="/restore">Restore</a>
         <a class="btn dark" href="/import-clients">Import Clients</a>
         <a class="btn gray" href="/export-template">Export Template</a>
@@ -1096,6 +1204,29 @@ def import_clients():
     return admin_page(body)
 
 
+
+@app.route("/auto-backup")
+def auto_backup_download():
+    if not login_required():
+        return redirect("/login")
+    save_auto_backup()
+    if AUTO_BACKUP_FILE.exists():
+        return Response(
+            AUTO_BACKUP_FILE.read_text(encoding="utf-8"),
+            mimetype="application/json",
+            headers={"Content-Disposition": "attachment; filename=noxiptv_backup.json"}
+        )
+    return Response("{}", mimetype="application/json")
+
+@app.route("/github-sync")
+def github_sync_now():
+    if not login_required():
+        return redirect("/login")
+    data = build_full_backup()
+    github_auto_sync(data)
+    return admin_page("<div class='card'><h2>GitHub Sync</h2><p class='ok'>Sync u provua. Kontrollo GitHub file-in noxiptv_backup.json.</p></div>")
+
+
 @app.route("/backup")
 def backup_all():
     if not login_required():
@@ -1357,11 +1488,12 @@ def watch_home():
             <button class="btn gray" onclick="stopTarget()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
             <a class="btn gray" id="vlcIphone" href="#">Open VLC iPhone</a>
-            <a class="btn gray" id="vlcAndroid1" href="#">Open VLC Android</a>
+            <a class="btn gray" id="vlcAndroid1" href="#" onclick="setTimeout(openAndroidVlcNow, 50)">Open VLC Android</a>
             <a class="btn gray" id="vlcAndroid2" href="#">Android Alt</a>
             <a class="btn gray" id="vlcClassic" href="#">VLC Classic</a>
+            <button class="btn gray" onclick="copyCurrentUrl()">Copy URL</button>
           </div>
-          <p class="hint" id="hint">Kliko kanal. Browser provon; VLC mbetet fallback.</p>
+          <p class="hint" id="hint">Kliko kanal. Për iPhone përdoret HLS direct kur është e mundur; VLC mbetet fallback.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -1403,6 +1535,17 @@ def watch_home():
 
       function markRecent(ch) {{ let r=getRecent().filter(x=>x!==ch.i); r.unshift(ch.i); setRecent(r); }}
       function toggleFavorite() {{ const ch=current[target]; if(!ch)return; let f=getFavs(); if(f.includes(ch.i))f=f.filter(x=>x!==ch.i); else f.push(ch.i); setFavs(f); render(); }}
+
+      function copyCurrentUrl() {
+        const ch = current[target];
+        if (!ch) return alert("Zgjedh kanal së pari.");
+        navigator.clipboard.writeText(ch.url).then(()=>alert("URL u kopjua."));
+      }
+
+      function openAndroidVlcNow() {
+        const a = document.getElementById("vlcAndroid1");
+        if (a && a.href && a.href !== "#") window.location.href = a.href;
+      }
 
       function updateVlc(ch) {{
         const encoded = encodeURIComponent(ch.url);
@@ -1797,7 +1940,7 @@ def watch_capabilities():
     return {
         "ok": True,
         "browser_methods": ["hls_proxy", "hls_direct", "mpegts_proxy", "direct_video", "proxy_direct_video"],
-        "note": "V6.2."
+        "note": "V6.3."
     }
 
 @app.route("/health")
