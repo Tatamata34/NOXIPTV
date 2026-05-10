@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.8
+NOX IPTV CLOUD PANEL V6.2
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -39,6 +39,9 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
+APP_VERSION = "V6.2"
+API_VERSION = "v6.2"
+
 
 HEADERS = {
     "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
@@ -391,7 +394,7 @@ def client_login_required():
 
 
 
-# ---------------- V6.1.1 FULL helpers ----------------
+# ---------------- V6.2----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -518,7 +521,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.8</title>
+  <title>NOX IPTV V6.2</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -552,7 +555,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4.8</h1>
+      <h1>NOX IPTV Panel <span style='font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;'>V6.2</span> V6.2 V6.2</h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -588,7 +591,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Player</title>
+  <title>NOX IPTV Player</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1098,7 +1101,7 @@ def backup_all():
     if not login_required():
         return redirect("/login")
     data = {
-        "version": "v4.8",
+        "version": API_VERSION,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
@@ -1223,7 +1226,7 @@ def watch_login():
                 if not ok:
                     log_event("login_blocked_device_limit", slug, status="blocked", extra={"used": used, "max": maxd})
                     return client_page(f"""
-                    <div class="top"><h2>Nox IPTV</h2></div>
+                    <div class="top"><h2>NOX IPTV</h2></div>
                     <div class="wrap"><div class="player"><p style="color:#fca5a5">Device limit arritur: {used}/{maxd}</p><a class="btn" href="/watch">Kthehu</a></div></div>
                     """)
                 session["client_slug"] = slug
@@ -1232,11 +1235,11 @@ def watch_login():
                 resp.set_cookie("nox_device_id", did, max_age=60*60*24*365)
                 return resp
         return client_page("""
-        <div class="top"><h2>Nox IPTV VLC Portal</h2></div>
+        <div class="top"><h2>NOX IPTV VLC Portal</h2></div>
         <div class="wrap"><div class="player"><p style="color:#fca5a5">Login gabim.</p><a class="btn" href="/watch">Provo prapë</a></div></div>
         """)
     body = """
-    <div class="top"><h2>Nox IPTV VLC Portal</h2></div>
+    <div class="top"><h2>NOX IPTV VLC Portal</h2></div>
     <div class="wrap">
       <div class="player">
         <h3>Client Login</h3>
@@ -1272,7 +1275,7 @@ def watch_home():
         text = get_playlist_for_client(slug, force_refresh=False)
         items = parse_m3u_items(text)
     except Exception as e:
-        return client_page(f"<div class='top'><h2>NOX IPTV</h2></div><div class='wrap'><div class='player'><p>Problem: {e}</p></div></div>")
+        return client_page(f"<div class='top'><h2>NOX IPTV {APP_VERSION}</h2></div><div class='wrap'><div class='player'><p>Problem: {e}</p></div></div>")
 
     sport_keys = ["ART SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA SPORT", "EUROSPORT", "FIGHT BOX", "FIGHTBOX"]
     safe_items = []
@@ -1286,48 +1289,61 @@ def watch_home():
     body = f"""
     <style>
       body {{ background:#07111f !important; color:#e5e7eb !important; }}
-      .top {{ background:linear-gradient(135deg,#07111f,#111827,#1e3a8a) !important; }}
-      .brandrow {{ display:flex; align-items:center; gap:12px; margin-bottom:12px; }}
-      .brandrow img {{ width:50px; height:50px; border-radius:16px; }}
-      .brandtitle {{ font-size:24px; font-weight:900; }}
-      .watch-shell {{ display:grid; grid-template-columns:245px 1fr; gap:14px; }}
-      .side {{ background:#0f172a; border:1px solid #1f2937; border-radius:20px; padding:13px; height:fit-content; position:sticky; top:90px; }}
-      .cat {{ display:block; width:100%; margin:7px 0; text-align:left; background:#1f2937; }}
+      .top {{ background:linear-gradient(135deg,#07111f,#111827,#1e3a8a) !important; padding:18px !important; }}
+      .brandrow {{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }}
+      .brandrow img {{ width:52px; height:52px; border-radius:16px; box-shadow:0 10px 30px #0007; }}
+      .brandtitle {{ font-size:25px; font-weight:900; letter-spacing:.3px; }}
+      .versionpill {{ display:inline-block; font-size:12px; background:#2563eb; padding:3px 8px; border-radius:999px; margin-left:8px; }}
+      .watch-shell {{ display:grid; grid-template-columns:250px minmax(0,1fr); gap:14px; }}
+      .side {{ background:rgba(15,23,42,.96); border:1px solid #1f2937; border-radius:22px; padding:14px; height:fit-content; position:sticky; top:92px; box-shadow:0 12px 35px #0005; }}
+      .cat {{ display:block; width:100%; margin:7px 0; text-align:left; background:#1f2937; border-radius:14px; }}
       .cat.active {{ background:#2563eb; }}
-      .playerbox {{ background:#0f172a; border:1px solid #1f2937; border-radius:22px; padding:14px; margin-bottom:14px; }}
+      .playerbox {{ background:rgba(15,23,42,.96); border:1px solid #1f2937; border-radius:24px; padding:14px; margin-bottom:14px; box-shadow:0 12px 40px #0006; }}
       .players.one {{ display:grid; grid-template-columns:1fr; gap:12px; }}
       .players.two {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
-      .screen {{ background:#020617; border:1px solid #1f2937; border-radius:18px; overflow:hidden; }}
+      .screen {{ background:#020617; border:1px solid #1f2937; border-radius:20px; overflow:hidden; }}
       video {{ width:100%; height:360px; background:#000; display:block; }}
-      .screenbar {{ padding:10px; display:flex; justify-content:space-between; background:#111827; }}
-      .badge {{ padding:4px 9px; border-radius:999px; background:#475569; font-size:12px; }}
+      .screenbar {{ padding:11px; display:flex; justify-content:space-between; gap:8px; background:#111827; align-items:center; }}
+      .badge {{ padding:5px 10px; border-radius:999px; background:#475569; font-size:12px; }}
       .badge.on {{ background:#16a34a; }} .badge.fail {{ background:#dc2626; }}
-      .controls {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }}
-      .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }}
-      .ch {{ background:#111827; border:1px solid #1f2937; border-radius:16px; padding:10px; cursor:pointer; min-height:75px; }}
+      .controls {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }}
+      .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:11px; }}
+      .ch {{ background:#111827; border:1px solid #1f2937; border-radius:18px; padding:11px; cursor:pointer; min-height:78px; transition:.15s; }}
       .ch:hover {{ border-color:#2563eb; transform:translateY(-1px); }}
-      .logo {{ width:40px; height:40px; object-fit:contain; float:left; margin-right:10px; background:#ffffff10; border-radius:10px; }}
-      .name {{ font-size:14px; font-weight:800; }}
-      .group {{ clear:both; font-size:12px; color:#94a3b8; margin-top:5px; }}
-      .searchbar {{ display:flex; gap:8px; flex-wrap:wrap; }}
-      @media(max-width:850px) {{ .watch-shell {{ grid-template-columns:1fr; }} .players.two {{ grid-template-columns:1fr; }} video {{ height:240px; }} .side {{ position:relative; top:0; }} }}
+      .logo {{ width:42px; height:42px; object-fit:contain; float:left; margin-right:10px; background:#ffffff10; border-radius:12px; }}
+      .name {{ font-size:14px; font-weight:850; }}
+      .group {{ clear:both; font-size:12px; color:#94a3b8; margin-top:6px; }}
+      .searchbar {{ display:flex; gap:10px; flex-wrap:wrap; }}
+      .searchbar input {{ flex:1; min-width:260px; }}
+      .helpbox {{ color:#94a3b8; font-size:13px; line-height:1.45; margin-top:10px; }}
+      @media(max-width:850px) {{
+        .watch-shell {{ grid-template-columns:1fr; }}
+        .players.two {{ grid-template-columns:1fr; }}
+        video {{ height:245px; }}
+        .side {{ position:relative; top:0; }}
+        .brandtitle {{ font-size:22px; }}
+      }}
     </style>
 
     <div class="top">
-      <div class="brandrow"><img src="/static/nox_logo.svg"><div><div class="brandtitle">NOX IPTV</div><div class="hint">{c.get('name')}</div></div></div>
+      <div class="brandrow">
+        <img src="/static/nox_logo.svg">
+        <div><div class="brandtitle">NOX IPTV <span class="versionpill">{APP_VERSION}</span></div><div class="hint">{c.get('name')}</div></div>
+      </div>
       <div class="searchbar"><input id="search" placeholder="Kërko kanal..."><a class="btn red" href="/watch/logout">Logout</a></div>
     </div>
 
     <div class="wrap watch-shell">
       <div class="side">
-        <button class="btn cat active" onclick="setGroup('')">Të gjitha</button>
-        <button class="btn cat" onclick="setGroup('__fav')">⭐ Favorites</button>
-        <button class="btn cat" onclick="setGroup('__recent')">🕘 Recent</button>
-        <button class="btn cat" onclick="setGroup('Sport')">Sport</button>
+        <button class="btn cat active" onclick="setGroup('', this)">Të gjitha</button>
+        <button class="btn cat" onclick="setGroup('__fav', this)">⭐ Favorites</button>
+        <button class="btn cat" onclick="setGroup('__recent', this)">🕘 Recent</button>
+        <button class="btn cat" onclick="setGroup('Sport', this)">Sport</button>
         <hr style="border-color:#1f2937">
         <button class="btn gray cat" onclick="setTarget(1)">Target Screen 1</button>
         <button class="btn gray cat" onclick="setTarget(2)">Target Screen 2</button>
         <button class="btn gray cat" onclick="toggleTwo()">1 / 2 Ekrane</button>
+        <div class="helpbox">Nëse iPhone nuk e hap disa kanale në browser, përdor VLC iPhone. Android/PC përdorin browser ose VLC Android.</div>
       </div>
 
       <div>
@@ -1341,8 +1357,9 @@ def watch_home():
             <button class="btn gray" onclick="stopTarget()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
             <a class="btn gray" id="vlcIphone" href="#">Open VLC iPhone</a>
-            <a class="btn gray" id="vlcAndroid" href="#">Open VLC Android</a>
-            <a class="btn gray" id="vlcClassic" href="#">Open VLC Classic</a>
+            <a class="btn gray" id="vlcAndroid1" href="#">Open VLC Android</a>
+            <a class="btn gray" id="vlcAndroid2" href="#">Android Alt</a>
+            <a class="btn gray" id="vlcClassic" href="#">VLC Classic</a>
           </div>
           <p class="hint" id="hint">Kliko kanal. Browser provon; VLC mbetet fallback.</p>
         </div>
@@ -1363,138 +1380,96 @@ def watch_home():
       let lastTime = {{1:0,2:0}};
       const favKey = "nox_favorites_{slug}";
       const recentKey = "nox_recent_{slug}";
+
       function getFavs() {{ return JSON.parse(localStorage.getItem(favKey)||"[]"); }}
       function setFavs(v) {{ localStorage.setItem(favKey, JSON.stringify(v)); }}
       function getRecent() {{ return JSON.parse(localStorage.getItem(recentKey)||"[]"); }}
       function setRecent(v) {{ localStorage.setItem(recentKey, JSON.stringify(v.slice(0,40))); }}
-      function setGroup(g) {{ currentGroup=g; render(); }}
+
+      function setGroup(g, el) {{
+        currentGroup=g;
+        document.querySelectorAll(".cat").forEach(x=>x.classList.remove("active"));
+        if(el) el.classList.add("active");
+        render();
+      }}
+
       function setTarget(n) {{ target=n; document.getElementById("hint").innerText="Kanali tjetër hapet në Screen "+n; }}
+
       function toggleTwo() {{
         const p=document.getElementById("players"), s2=document.getElementById("screen2");
         if(p.classList.contains("one")){{p.classList.remove("one");p.classList.add("two");s2.style.display="";}}
         else{{p.classList.remove("two");p.classList.add("one");s2.style.display="none";target=1;stopScreen(2);}}
       }}
+
       function markRecent(ch) {{ let r=getRecent().filter(x=>x!==ch.i); r.unshift(ch.i); setRecent(r); }}
       function toggleFavorite() {{ const ch=current[target]; if(!ch)return; let f=getFavs(); if(f.includes(ch.i))f=f.filter(x=>x!==ch.i); else f.push(ch.i); setFavs(f); render(); }}
+
       function updateVlc(ch) {{
         const encoded = encodeURIComponent(ch.url);
-        const clean = ch.url.replace(/^https?:\/\//,"");
+        const clean = ch.url.replace(/^https?:\\/\\//,"");
         const scheme = ch.url.startsWith("https://") ? "https" : "http";
-
-        const vi = document.getElementById("vlcIphone");
-        const va = document.getElementById("vlcAndroid");
-        const vc = document.getElementById("vlcClassic");
-
-        if (vi) vi.href = "vlc-x-callback://x-callback-url/stream?url=" + encoded;
-        if (va) va.href = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
-        if (vc) vc.href = "vlc://" + ch.url;
+        document.getElementById("vlcIphone").href = "vlc-x-callback://x-callback-url/stream?url=" + encoded;
+        document.getElementById("vlcAndroid1").href = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end";
+        document.getElementById("vlcAndroid2").href = "vlc://" + ch.url;
+        document.getElementById("vlcClassic").href = "vlc://" + ch.url;
       }}
-      function stopScreen(n) {{
-        manualStop[n] = true;
-        if (watchdog[n]) {{ clearInterval(watchdog[n]); watchdog[n] = null; }}
-        const v=document.getElementById("video"+n);
-        if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}hlsMap[n]=null;}}
-        if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}tsMap[n]=null;}}
-        try{{v.pause();}}catch(e){{}} v.removeAttribute("src"); v.load();
-        document.getElementById("badge"+n).className="badge"; document.getElementById("badge"+n).innerText="STOP";
-      }}
-      function stopTarget() {{ stopScreen(target); }}
 
       function setBadge(n, text, cls) {{
-        const b = document.getElementById("badge"+n);
-        b.className = "badge " + (cls || "");
-        b.innerText = text;
+        const b=document.getElementById("badge"+n); b.className="badge "+(cls||""); b.innerText=text;
       }}
 
       function startWatchdog(n) {{
-        if (watchdog[n]) clearInterval(watchdog[n]);
-        lastTime[n] = document.getElementById("video"+n).currentTime || 0;
-        watchdog[n] = setInterval(() => {{
-          const v = document.getElementById("video"+n);
-          const ch = current[n];
-          if (!ch || manualStop[n]) return;
-
-          const now = v.currentTime || 0;
-          const stuck = v.readyState >= 2 && !v.paused && Math.abs(now - lastTime[n]) < 0.03;
-          const ended = v.ended || (isFinite(v.duration) && v.duration > 0 && now >= v.duration - 0.4);
-          const badState = v.readyState === 0;
-
-          if (stuck || ended || badState) {{
-            reconnects[n] += 1;
-            setBadge(n, "RELOAD " + reconnects[n], "");
-            document.getElementById("hint").innerText = "Stream u ndal. Po rihapet automatikisht...";
-            if (reconnects[n] <= 6) {{
-              playBrowser(ch, n, true);
-            }} else {{
-              setBadge(n, "VLC", "fail");
-              document.getElementById("hint").innerText = "Browser po e ndërpret këtë stream. Përdor VLC.";
-            }}
+        if(watchdog[n]) clearInterval(watchdog[n]);
+        lastTime[n]=document.getElementById("video"+n).currentTime||0;
+        watchdog[n]=setInterval(()=>{{
+          const v=document.getElementById("video"+n), ch=current[n];
+          if(!ch || manualStop[n]) return;
+          const now=v.currentTime||0;
+          const stuck=v.readyState>=2 && !v.paused && Math.abs(now-lastTime[n])<0.03;
+          const ended=v.ended || (isFinite(v.duration) && v.duration>0 && now>=v.duration-0.4);
+          if(stuck || ended) {{
+            reconnects[n]+=1; setBadge(n,"RELOAD "+reconnects[n],"");
+            if(reconnects[n]<=6) playBrowser(ch,n,true); else setBadge(n,"VLC","fail");
           }}
-          lastTime[n] = now;
+          lastTime[n]=now;
         }}, 7000);
       }}
+
+      function stopScreen(n) {{
+        manualStop[n]=true;
+        if(watchdog[n]){{clearInterval(watchdog[n]);watchdog[n]=null;}}
+        const v=document.getElementById("video"+n);
+        if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}hlsMap[n]=null;}}
+        if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}tsMap[n]=null;}}
+        try{{v.pause();}}catch(e){{}} v.removeAttribute("src"); v.load(); setBadge(n,"STOP","");
+      }}
+
+      function stopTarget() {{ stopScreen(target); }}
 
       function playChannel(ch) {{
         current[target]=ch; markRecent(ch); updateVlc(ch); reconnects[target]=0; manualStop[target]=false;
         document.getElementById("now"+target).innerText=ch.name;
-        document.getElementById("badge"+target).className="badge"; document.getElementById("badge"+target).innerText="LOAD";
+        setBadge(target,"LOAD","");
         try{{navigator.sendBeacon("/watch/log", JSON.stringify({{channel:ch.name,id:ch.i,event:"channel_click"}}));}}catch(e){{}}
         playBrowser(ch,target);
       }}
+
       function playBrowser(ch,n,isReconnect=false) {{
-        if (!isReconnect) reconnects[n]=0;
+        if(!isReconnect) reconnects[n]=0;
         manualStop[n]=false;
-        if (watchdog[n]) {{ clearInterval(watchdog[n]); watchdog[n]=null; }}
-        stopScreen(n);
-        manualStop[n]=false;
+        if(watchdog[n]){{clearInterval(watchdog[n]);watchdog[n]=null;}}
+        stopScreen(n); manualStop[n]=false;
+        const v=document.getElementById("video"+n), lower=ch.url.toLowerCase();
+        const src=lower.includes(".m3u8") ? ch.url : "/watch/stream/"+ch.i+"?t="+Date.now();
 
-        const v=document.getElementById("video"+n), badge=document.getElementById("badge"+n);
-        const lower=ch.url.toLowerCase();
-        let src=lower.includes(".m3u8") ? ch.url : "/watch/stream/"+ch.i+"?t="+Date.now();
-
-        v.onplaying=function(){{
-          badge.className="badge on"; badge.innerText="LIVE";
-          document.getElementById("hint").innerText="Live në browser.";
-          startWatchdog(n);
-        }};
-        v.onpause=function(){{
-          if (!manualStop[n] && current[n]) {{
-            setTimeout(()=>{{
-              if (!manualStop[n] && current[n] && v.paused) {{
-                document.getElementById("hint").innerText="Stream u pauzua vetë. Po vazhdon...";
-                try {{ v.play(); }} catch(e) {{}}
-                setTimeout(()=>{{ if(v.paused) playBrowser(current[n],n,true); }}, 1200);
-              }}
-            }}, 800);
-          }}
-        }};
-        v.onended=function(){{
-          if (!manualStop[n] && current[n]) {{
-            setBadge(n,"RELOAD","");
-            playBrowser(current[n],n,true);
-          }}
-        }};
-        v.onstalled=function(){{
-          if (!manualStop[n] && current[n]) {{
-            document.getElementById("hint").innerText="Stall detected. Po rihapet...";
-            playBrowser(current[n],n,true);
-          }}
-        }};
-        v.onerror=function(){{
-          badge.className="badge fail"; badge.innerText="VLC";
-          document.getElementById("hint").innerText="Browser nuk e hapi. Përdor VLC.";
-        }};
+        v.onplaying=function(){{setBadge(n,"LIVE","on");document.getElementById("hint").innerText="Live në browser.";startWatchdog(n);}};
+        v.onpause=function(){{if(!manualStop[n]&&current[n])setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.paused){{try{{v.play();}}catch(e){{}} setTimeout(()=>{{if(v.paused)playBrowser(current[n],n,true);}},1200);}}}},800);}};
+        v.onended=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
+        v.onstalled=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
+        v.onerror=function(){{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Browser nuk e hapi. Përdor VLC."; }};
 
         if(src.includes(".m3u8") && Hls.isSupported()) {{
-          hlsMap[n]=new Hls({{
-            lowLatencyMode:true,
-            liveSyncDurationCount:3,
-            maxBufferLength:45,
-            backBufferLength:15,
-            enableWorker:true,
-            fragLoadingTimeOut:20000,
-            manifestLoadingTimeOut:12000
-          }});
+          hlsMap[n]=new Hls({{lowLatencyMode:true,liveSyncDurationCount:3,maxBufferLength:45,backBufferLength:15,enableWorker:true,fragLoadingTimeOut:20000,manifestLoadingTimeOut:12000}});
           hlsMap[n].loadSource(src); hlsMap[n].attachMedia(v);
           hlsMap[n].on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>{{}}));
           hlsMap[n].on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal)playMpegts("/watch/stream/"+ch.i+"?t="+Date.now(),n);}});
@@ -1502,37 +1477,19 @@ def watch_home():
       }}
 
       function playMpegts(src,n) {{
-        const v=document.getElementById("video"+n), badge=document.getElementById("badge"+n);
+        const v=document.getElementById("video"+n);
         if(window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
           try {{
             if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}}}
-            tsMap[n]=mpegts.createPlayer({{
-              type:"mpegts",
-              isLive:true,
-              url:src,
-              cors:false,
-              enableStashBuffer:true,
-              stashInitialSize:1024,
-              lazyLoad:false,
-              autoCleanupSourceBuffer:true,
-              autoCleanupMaxBackwardDuration:30,
-              autoCleanupMinBackwardDuration:10,
-              fixAudioTimestampGap:true
-            }});
-            tsMap[n].on(mpegts.Events.ERROR,function(){{
-              badge.className="badge fail"; badge.innerText="RETRY";
-              if(!manualStop[n] && current[n]) setTimeout(()=>playBrowser(current[n],n,true),1200);
-            }});
+            tsMap[n]=mpegts.createPlayer({{type:"mpegts",isLive:true,url:src,cors:false,enableStashBuffer:true,stashInitialSize:1024,lazyLoad:false,autoCleanupSourceBuffer:true,autoCleanupMaxBackwardDuration:30,autoCleanupMinBackwardDuration:10,fixAudioTimestampGap:true}});
+            tsMap[n].on(mpegts.Events.ERROR,function(){{ if(!manualStop[n]&&current[n]) setTimeout(()=>playBrowser(current[n],n,true),1200); }});
             tsMap[n].attachMediaElement(v); tsMap[n].load(); tsMap[n].play();
-          }} catch(e) {{
-            v.src=src; v.play().catch(()=>{{badge.className="badge fail";badge.innerText="VLC";}});
-          }}
-        }} else {{
-          v.src=src; v.play().catch(()=>{{badge.className="badge fail";badge.innerText="VLC";}});
-        }}
+          }} catch(e) {{ v.src=src; v.play().catch(()=>setBadge(n,"VLC","fail")); }}
+        }} else {{ v.src=src; v.play().catch(()=>setBadge(n,"VLC","fail")); }}
       }}
 
-      function retryCurrent() {{ if(current[target]) {{ manualStop[target]=false; reconnects[target]=0; playBrowser(current[target],target); }} }}
+      function retryCurrent() {{ if(current[target]){{manualStop[target]=false;reconnects[target]=0;playBrowser(current[target],target);}} }}
+
       function render() {{
         const q=document.getElementById("search").value.toLowerCase(), favs=getFavs(), rec=getRecent(), box=document.getElementById("channels");
         box.innerHTML="";
@@ -1840,7 +1797,7 @@ def watch_capabilities():
     return {
         "ok": True,
         "browser_methods": ["hls_proxy", "hls_direct", "mpegts_proxy", "direct_video", "proxy_direct_video"],
-        "note": "V6.1.1 tries all browser methods automatically before showing failure."
+        "note": "V6.2."
     }
 
 @app.route("/health")
@@ -1848,7 +1805,7 @@ def health():
     return {
         "ok": True,
         "service": "noxiptv",
-        "version": "v4.8",
+        "version": API_VERSION,
         "time": datetime.now().isoformat(),
         "clients": len(load_clients()),
         "template_channels": get_template_text().count("#EXTINF"),
