@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V4.8
+NOX IPTV CLOUD PANEL V7.8.4
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -506,7 +506,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Panel V4.8</title>
+  <title>NOX IPTV Panel V7.8.4</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -540,7 +540,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>Nox IPTV Panel V4.8</h1>
+      <h1>NOX IPTV Panel V7.8.4</h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -1085,7 +1085,7 @@ def backup_all():
     if not login_required():
         return redirect("/login")
     data = {
-        "version": "v4.8",
+        "version": "v7.8.4",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
@@ -1321,6 +1321,7 @@ def watch_home():
             <button class="btn" onclick="retryCurrent()">Retry</button>
             <button class="btn gray" onclick="stopPlayer()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
+            <a class="btn gray" id="openVlcIphone" href="#">Open VLC iPhone</a>
             <a class="btn gray" id="openVlcAndroid" href="#">Open VLC Android</a>
             <a class="btn gray" id="openVlcClassic" href="#">Open VLC Classic</a>
             <a class="btn gray" id="openDirect" href="#" target="_blank">Open Direct</a>
@@ -1364,10 +1365,22 @@ def watch_home():
 
       function updateExternalLinks(url) {{
         const clean = url.replace(/^https?:\\/\\//, "");
-        const androidIntent = "intent://" + clean + "#Intent;scheme=http;package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
-        document.getElementById("openVlcAndroid").href = androidIntent;
-        document.getElementById("openVlcClassic").href = "vlc://" + url;
-        document.getElementById("openDirect").href = url;
+        const scheme = url.startsWith("https://") ? "https" : "http";
+
+        // WORKING LOGIC FROM UPLOADED VERSION:
+        // Build VLC links directly in browser from selected channel URL.
+        const androidIntent = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
+        const iphoneVlc = "vlc-x-callback://x-callback-url/stream?url=" + encodeURIComponent(url);
+
+        const iphone = document.getElementById("openVlcIphone");
+        const android = document.getElementById("openVlcAndroid");
+        const classic = document.getElementById("openVlcClassic");
+        const direct = document.getElementById("openDirect");
+
+        if (iphone) iphone.href = iphoneVlc;
+        if (android) android.href = androidIntent;
+        if (classic) classic.href = "vlc://" + url;
+        if (direct) direct.href = url;
       }}
 
       function markRecent(ch) {{
@@ -1464,7 +1477,7 @@ def watch_home():
         hint.innerText = "Duke provuar direct...";
         video.src = ch.url;
         video.play().catch(() => {{
-          hint.innerText = "Browser nuk e hapi. Përdor VLC Android/Classic.";
+          hint.innerText = "Browser nuk e hapi. Përdor VLC iPhone/Android.";
           const ua = navigator.userAgent.toLowerCase();
           if (settings.vlc_auto_fallback && ua.includes("android")) {{
             setTimeout(() => {{ window.location.href = document.getElementById("openVlcAndroid").href; }}, 800);
@@ -1660,7 +1673,7 @@ def health():
     return {
         "ok": True,
         "service": "noxiptv",
-        "version": "v4.8",
+        "version": "v7.8.4",
         "time": datetime.now().isoformat(),
         "clients": len(load_clients()),
         "template_channels": get_template_text().count("#EXTINF"),
