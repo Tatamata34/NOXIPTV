@@ -2,24 +2,26 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.8.4
+NOX IPTV CLOUD PANEL V7.9.1
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
 """
 
 import json
+import base64
 import os
 import re
 import socket
 import time
 import uuid
+import base64
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse, urljoin
 
 import requests
-from flask import Flask, Response, abort, redirect, render_template_string, request, session, url_for
+from flask import stream_with_context, Flask, Response, abort, redirect, render_template_string, request, session, url_for
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", APP_DIR / "data"))
@@ -29,15 +31,50 @@ CACHE_DIR.mkdir(exist_ok=True)
 
 CLIENTS_FILE = DATA_DIR / "clients.json"
 TEMPLATE_FILE = DATA_DIR / "master_template.m3u"
+DEFAULT_BACKUP_FILE = APP_DIR / "noxiptv_backup.json"
+AUTO_BACKUP_FILE = DATA_DIR / "auto_backup.json"
 LOGS_FILE = DATA_DIR / "logs.jsonl"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 DEVICE_FILE = DATA_DIR / "devices.json"
 CHANNEL_STATS_FILE = DATA_DIR / "channel_stats.json"
+SERVER_TEMPLATES_FILE = DATA_DIR / "server_templates.json"
+
+DEFAULT_SERVER_TEMPLATES = [
+    {"id": "default-0", "name": "Server 1", "server": "http://ktzcvyrm.sqhsm.com", "note": "default template", "created": "default"},
+    {"id": "default-1", "name": "Server 2", "server": "http://ktzcvyrm.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-2", "name": "Server 3", "server": "http://cytwuvie.msostvip.com", "note": "default template", "created": "default"},
+    {"id": "default-3", "name": "Server 4", "server": "http://cytwuvie.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-4", "name": "Server 5", "server": "http://augacsej.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-5", "name": "Server 6", "server": "http://augacsej.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-6", "name": "Server 7", "server": "http://bfvbdsnd.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-7", "name": "Server 8", "server": "http://bfvbdsnd.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-8", "name": "Server 9", "server": "http://kypzbyrd.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-9", "name": "Server 10", "server": "http://kypzbyrd.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-10", "name": "Server 11", "server": "http://pbmnnegi.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-11", "name": "Server 12", "server": "http://pbmnnegi.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-12", "name": "Server 13", "server": "http://mhpnrzxt.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-13", "name": "Server 14", "server": "http://mhpnrzxt.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-14", "name": "Server 15", "server": "http://zkyzefwp.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-15", "name": "Server 16", "server": "http://zkyzefwp.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-16", "name": "Server 17", "server": "http://zsbgkxja.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-17", "name": "Server 18", "server": "http://zsbgkxja.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-18", "name": "Server 19", "server": "http://nfpfcrji.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-19", "name": "Server 20", "server": "http://nfpfcrji.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-20", "name": "Server 21", "server": "http://myrcztdp.nelidns.com", "note": "default template", "created": "default"},
+    {"id": "default-21", "name": "Server 22", "server": "http://myrcztdp.yangsmart.com", "note": "default template", "created": "default"},
+    {"id": "default-22", "name": "Server 23", "server": "http://zqvsqzyg.msostvip.com", "note": "default template", "created": "default"},
+    {"id": "default-23", "name": "Server 24", "server": "http://zqvsqzyg.meza.in", "note": "default template", "created": "default"},
+    {"id": "default-24", "name": "Server 25", "server": "http://egxbnjjg.qastertv.xyz", "note": "default template", "created": "default"},
+    {"id": "default-25", "name": "Server 26", "server": "http://egxbnjjg.smyia.com", "note": "default template", "created": "default"}
+]
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
+APP_VERSION = "V7.9.1"
+API_VERSION = "v7.9.1"
+
 
 HEADERS = {
     "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
@@ -57,9 +94,76 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 
-# ---------------- Helpers ----------------
 
-def load_clients():
+# ---------------- Persistent Backup / GitHub Sync ----------------
+
+def build_full_backup():
+    return {
+        "version": API_VERSION if "API_VERSION" in globals() else "v7.1",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "clients": load_clients_raw(),
+        "master_template": get_template_text_raw(),
+        "server_templates": load_server_templates() if "load_server_templates" in globals() else [],
+        "note": "Auto backup from NOX IPTV panel."
+    }
+
+
+def save_auto_backup():
+    try:
+        data = build_full_backup()
+        AUTO_BACKUP_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        github_auto_sync(data)
+    except Exception as e:
+        print("auto backup problem:", e)
+
+
+def github_auto_sync(data):
+    """
+    Optional true GitHub overwrite.
+    Set these Render Environment variables:
+    GITHUB_TOKEN = github personal access token
+    GITHUB_REPO = username/repository
+    GITHUB_BRANCH = main
+    GITHUB_BACKUP_PATH = noxiptv_backup.json
+    """
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPO", "").strip()
+    branch = os.environ.get("GITHUB_BRANCH", "main").strip()
+    path = os.environ.get("GITHUB_BACKUP_PATH", "noxiptv_backup.json").strip()
+    if not token or not repo:
+        return
+
+    api = f"https://api.github.com/repos/{repo}/contents/{path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "NOX-IPTV-Panel"
+    }
+
+    sha = None
+    try:
+        r = requests.get(api, headers=headers, params={"ref": branch}, timeout=15)
+        if r.status_code == 200:
+            sha = r.json().get("sha")
+    except Exception:
+        pass
+
+    content = base64.b64encode(json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")).decode("ascii")
+    payload = {
+        "message": f"Auto backup clients {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "content": content,
+        "branch": branch
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        requests.put(api, headers=headers, json=payload, timeout=20)
+    except Exception as e:
+        print("github sync problem:", e)
+
+
+def load_clients_raw():
     if CLIENTS_FILE.exists():
         try:
             return json.loads(CLIENTS_FILE.read_text(encoding="utf-8"))
@@ -68,8 +172,42 @@ def load_clients():
     return {}
 
 
+def get_template_text_raw():
+    if TEMPLATE_FILE.exists():
+        return TEMPLATE_FILE.read_text(encoding="utf-8", errors="ignore")
+    return ""
+
+
+# ---------------- Helpers ----------------
+
+def load_clients():
+    if CLIENTS_FILE.exists():
+        try:
+            return json.loads(CLIENTS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    # First deploy: seed clients from repo backup file
+    if DEFAULT_BACKUP_FILE.exists():
+        try:
+            data = json.loads(DEFAULT_BACKUP_FILE.read_text(encoding="utf-8"))
+            clients = data.get("clients", {})
+            master = data.get("master_template", "")
+            if clients:
+                CLIENTS_FILE.write_text(json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8")
+            if master and not TEMPLATE_FILE.exists():
+                TEMPLATE_FILE.write_text(master, encoding="utf-8")
+            servers = data.get("server_templates", [])
+            if servers and not SERVER_TEMPLATES_FILE.exists():
+                SERVER_TEMPLATES_FILE.write_text(json.dumps(servers, ensure_ascii=False, indent=2), encoding="utf-8")
+            return clients
+        except Exception as e:
+            print("seed backup problem:", e)
+    return {}
+
+
 def save_clients(clients):
     CLIENTS_FILE.write_text(json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_auto_backup()
 
 
 def slugify(text):
@@ -139,6 +277,7 @@ def get_template_text():
 
 def save_template_text(text):
     TEMPLATE_FILE.write_text(text, encoding="utf-8")
+    save_auto_backup()
 
 
 def proxy_fetch_url(client, target_url):
@@ -276,18 +415,15 @@ def template_stats(text):
     }
 
 
-def replace_stream_credentials_in_url(url, new_base, username, password):
+def replace_stream_credentials_in_url(url, new_base, username, password, output="ts"):
+    # V7 stable: direct Xtream URL, no forced /live/*.m3u8
     new_base = normalize_base(new_base)
     old = urlparse(url)
     nb = urlparse(new_base)
     parts = [x for x in old.path.split("/") if x]
-    if len(parts) >= 3:
-        rest = parts[2:]
-        new_path = "/" + "/".join([username, password] + rest)
-    elif len(parts) >= 1:
-        new_path = "/" + "/".join([username, password] + parts[-1:])
-    else:
-        new_path = f"/{username}/{password}"
+    stream_id = parts[-1] if parts else ""
+    stream_id = stream_id.replace(".ts", "").replace(".m3u8", "")
+    new_path = "/" + "/".join([username, password, stream_id])
     return urlunparse((nb.scheme or old.scheme or "http", nb.netloc, new_path, "", "", ""))
 
 
@@ -299,7 +435,7 @@ def apply_template_for_client(template_text, client):
         raise ValueError("Për template mode duhen server, username dhe password te klienti.")
     items = parse_m3u_items(template_text)
     for item in items:
-        item["url"] = replace_stream_credentials_in_url(item["url"], server, username, password)
+        item["url"] = replace_stream_credentials_in_url(item["url"], server, username, password, client.get("output", "ts"))
     processed = rebuild_m3u(items)
     return process_m3u(processed, client)
 
@@ -390,7 +526,7 @@ def client_login_required():
 
 
 
-# ---------------- V5.1 FULL helpers ----------------
+# ---------------- V6.3----------------
 
 def load_json_file(path, default):
     if path.exists():
@@ -407,9 +543,19 @@ def save_json_file(path, data):
 
 def get_settings():
     default = {
-        "brand_name": "Nox IPTV",
+        "brand_name": "NOX IPTV",
+        "logo_text": "NOX",
+        "logo_url": "/static/nox_logo.svg",
+        "theme_preset": "modern_blue",
         "brand_color": "#2563eb",
         "accent_color": "#16a34a",
+        "background_color": "#0b1220",
+        "card_color": "#111827",
+        "text_color": "#e5e7eb",
+        "layout_mode": "sidebar",
+        "player_position": "top",
+        "card_style": "rounded",
+        "channel_columns": "auto",
         "dark_mode": True,
         "smart_engine": True,
         "auto_fallback": True,
@@ -418,9 +564,10 @@ def get_settings():
         "fast_zapping": True,
         "pwa": True,
         "custom_categories": {
-            "Shqip": ["AL|", "ALBANIA", "KOSOVA", "KOSOVO", "SHQIP"],
-            "Sport": ["SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA", "EUROSPORT"],
-            "Gjermani": ["DE|", "GERMANY", "DEUTSCHLAND", "ZDF", "RTL", "SAT"]
+            "Sport": [
+                "ART SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA SPORT",
+                "EUROSPORT", "FIGHT BOX", "FIGHTBOX"
+            ]
         }
     }
     s = load_json_file(SETTINGS_FILE, default)
@@ -506,7 +653,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV Panel V7.8.4</title>
+  <title>NOX IPTV V7.9.1</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -540,7 +687,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel V7.8.4</h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.9.1</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -548,12 +695,15 @@ ADMIN_HTML = """
         <a class="btn" href="/template">Master Template</a>
         <a class="btn green" href="/add">Add Client</a>
         <a class="btn gray" href="/status">Status</a>
+        <a class="btn gray" href="/servers">Server Templates</a>
         <a class="btn gray" href="/logs">Logs</a>
         <a class="btn gray" href="/analytics">Analytics</a>
         <a class="btn gray" href="/settings">Branding/Settings</a>
         <a class="btn gray" href="/bulk-refresh">Bulk Refresh</a>
         <a class="btn gray" href="/clear-cache">Clear Cache</a>
         <a class="btn dark" href="/backup">Backup All</a>
+        <a class="btn dark" href="/auto-backup">Auto Backup</a>
+        <a class="btn gray" href="/github-sync">GitHub Sync</a>
         <a class="btn dark" href="/restore">Restore</a>
         <a class="btn dark" href="/import-clients">Import Clients</a>
         <a class="btn gray" href="/export-template">Export Template</a>
@@ -576,9 +726,10 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nox IPTV Player</title>
+  <title>NOX IPTV V7.9.1</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="manifest" href="/manifest.json">
   <style>
@@ -616,6 +767,76 @@ def admin_page(body):
 
 def client_page(body):
     return render_template_string(CLIENT_HTML, body=body)
+
+
+
+# ---------------- Server Templates ----------------
+
+def load_server_templates():
+    if SERVER_TEMPLATES_FILE.exists():
+        try:
+            data = json.loads(SERVER_TEMPLATES_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+
+    defaults = DEFAULT_SERVER_TEMPLATES if "DEFAULT_SERVER_TEMPLATES" in globals() else []
+    if defaults:
+        try:
+            SERVER_TEMPLATES_FILE.write_text(json.dumps(defaults, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        return defaults
+    return []
+
+
+def save_server_templates(servers):
+    SERVER_TEMPLATES_FILE.write_text(json.dumps(servers, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        save_auto_backup()
+    except Exception:
+        pass
+
+
+def server_slug(name, server):
+    return slugify((name or server or "server")[:80])
+
+
+def test_server_template(server, username="", password=""):
+    server = normalize_base(server)
+    parsed = urlparse(server)
+    out = {
+        "server": server,
+        "host": parsed.hostname or "",
+        "ip": resolve_ip(parsed.hostname or "") if parsed.hostname else "",
+        "root_ok": False,
+        "api_ok": False,
+        "status": "",
+        "expiry": "",
+        "connections": "",
+        "error": ""
+    }
+    try:
+        r = requests.get(server, headers=HEADERS, timeout=12, allow_redirects=True)
+        out["root_ok"] = r.status_code < 500
+        out["root_status"] = r.status_code
+    except Exception as e:
+        out["root_error"] = str(e)
+
+    if username and password:
+        try:
+            info = check_api_from_parts(server, username, password)
+            out["api_ok"] = bool(info.get("ok"))
+            out["status"] = info.get("status", "")
+            out["expiry"] = info.get("expiry", "")
+            out["connections"] = f"{info.get('active','?')}/{info.get('max','?')}"
+            if not info.get("ok"):
+                out["error"] = info.get("error", "")
+        except Exception as e:
+            out["api_ok"] = False
+            out["error"] = str(e)
+    return out
 
 
 # ---------------- Admin routes ----------------
@@ -670,7 +891,7 @@ def dashboard():
 
     rows = ""
     for slug, c in sorted(clients.items()):
-        public_url = request.url_root.rstrip("/") + url_for("playlist", slug=slug)
+        public_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
         watch_url = request.url_root.rstrip("/") + "/watch"
         mode = c.get("mode", "source_link")
         fav = "★ " if c.get("favorite") else ""
@@ -841,6 +1062,12 @@ def add_edit(slug=None):
         <div class="grid">
           <div class="card">
             <h3>Template mode</h3>
+            <label>Server Template</label>
+            <select name="server_template_select" onchange="document.querySelector('[name=server]').value=this.value">
+              <option value="">Mos ndrysho / manual</option>
+              {''.join(f'<option value="{s.get("server","")}">{s.get("name","Server")} - {s.get("server","")}</option>' for s in load_server_templates())}
+            </select>
+
             <label>Server/host</label>
             <input name="server" value="{client.get('server','')}" placeholder="http://host.com:80">
             <label>Username</label>
@@ -1007,6 +1234,322 @@ def toggle_client(slug):
     save_clients(clients)
     return redirect("/")
 
+
+@app.route("/servers", methods=["GET", "POST"])
+def servers_page():
+    if not login_required():
+        return redirect("/login")
+
+    servers = load_server_templates()
+    msg = ""
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "add":
+            name = request.form.get("name", "").strip()
+            server = normalize_base(request.form.get("server", "").strip())
+            note = request.form.get("note", "").strip()
+            if server:
+                sid = server_slug(name, server)
+                servers.append({
+                    "id": sid + "-" + str(int(time.time())),
+                    "name": name or server,
+                    "server": server,
+                    "note": note,
+                    "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+                save_server_templates(servers)
+                msg = "<p class='ok'>Server template u shtua.</p>"
+        elif action == "bulk":
+            raw = request.form.get("bulk_servers", "")
+            added = 0
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if "|" in line:
+                    name, server = [x.strip() for x in line.split("|", 1)]
+                else:
+                    server = line
+                    name = server
+                server = normalize_base(server)
+                if server:
+                    servers.append({
+                        "id": server_slug(name, server) + "-" + str(int(time.time())) + "-" + str(added),
+                        "name": name,
+                        "server": server,
+                        "note": "",
+                        "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                    added += 1
+            save_server_templates(servers)
+            msg = f"<p class='ok'>{added} serverë u shtuan.</p>"
+
+    rows = ""
+    clients = load_clients()
+    client_options = "".join(f'<option value="{slug}">{c.get("name", slug)} ({slug})</option>' for slug, c in sorted(clients.items()))
+
+    for s in servers:
+        sid = s.get("id", "")
+        rows += f"""
+        <tr>
+          <td><b>{s.get('name')}</b><br><span class="small">{s.get('note','')}</span></td>
+          <td><code>{s.get('server')}</code></td>
+          <td>{s.get('created','')}</td>
+          <td>
+            <a class="btn gray" href="/servers/test/{sid}">Test</a>
+            <form method="post" action="/servers/apply/{sid}" style="display:inline-block;min-width:260px;">
+              <select name="client_slug" style="width:180px;display:inline-block;">{client_options}</select>
+              <button class="btn green">Apply to client</button>
+            </form>
+            <a class="btn red" href="/servers/delete/{sid}" onclick="return confirm('Delete server?')">Delete</a>
+          </td>
+        </tr>
+        """
+
+    body = f"""
+    <div class="card">
+      <h2>Server Templates</h2>
+      <p><a class="btn green" href="/servers/test-all">TEST ALL</a></p>
+      <p class="small">Këtu i ruan serverët si template, i teston, dhe pastaj zgjedh cilit klient t'ia vendosësh.</p>
+      {msg}
+      <form method="post">
+        <input type="hidden" name="action" value="add">
+        <label>Emri</label>
+        <input name="name" placeholder="p.sh. Server 1 Germany">
+        <label>Server/Host</label>
+        <input name="server" placeholder="http://host.com:80">
+        <label>Shënim</label>
+        <input name="note" placeholder="opsionale">
+        <button>Add Server Template</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Bulk Add</h3>
+      <p class="small">Një server për rresht. Format: <code>Emri | http://host:port</code> ose vetëm <code>http://host:port</code></p>
+      <form method="post">
+        <input type="hidden" name="action" value="bulk">
+        <textarea name="bulk_servers" rows="7" placeholder="Server 1 | http://host1.com:80&#10;Server 2 | http://host2.com:8080"></textarea>
+        <button>Add Bulk Servers</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Saved Servers</h3>
+      <table>
+        <tr><th>Name</th><th>Server</th><th>Created</th><th>Actions</th></tr>
+        {rows or '<tr><td colspan="4">Ende nuk ka serverë.</td></tr>'}
+      </table>
+    </div>
+    """
+    return admin_page(body)
+
+
+@app.route("/servers/delete/<sid>")
+def server_delete(sid):
+    if not login_required():
+        return redirect("/login")
+    servers = [s for s in load_server_templates() if s.get("id") != sid]
+    save_server_templates(servers)
+    return redirect("/servers")
+
+
+
+@app.route("/servers/test-all")
+def servers_test_all():
+    if not login_required():
+        return redirect("/login")
+
+    servers = load_server_templates()
+    clients = load_clients()
+
+    # Choose credentials from selected client if provided, otherwise first client with username/password.
+    selected_slug = request.args.get("client_slug", "")
+    selected_client = clients.get(selected_slug) if selected_slug else None
+    if not selected_client:
+        selected_client = None
+        for _slug, _c in sorted(clients.items()):
+            if _c.get("username") and _c.get("password"):
+                selected_slug = _slug
+                selected_client = _c
+                break
+            try:
+                p = parse_m3u_link(_c.get("m3u_link", ""))
+                selected_slug = _slug
+                selected_client = dict(_c)
+                selected_client["username"] = p["username"]
+                selected_client["password"] = p["password"]
+                break
+            except Exception:
+                pass
+
+    username = ""
+    password = ""
+    client_name = "-"
+    if selected_client:
+        client_name = selected_client.get("name", selected_slug)
+        username = selected_client.get("username", "")
+        password = selected_client.get("password", "")
+        if not username or not password:
+            try:
+                p = parse_m3u_link(selected_client.get("m3u_link", ""))
+                username = p["username"]
+                password = p["password"]
+            except Exception:
+                pass
+
+    results = []
+    for s in servers:
+        r = test_server_template(s.get("server"), username, password)
+        r["id"] = s.get("id")
+        r["name"] = s.get("name")
+        r["note"] = s.get("note", "")
+        results.append(r)
+
+    ok_count = sum(1 for r in results if r.get("api_ok") or r.get("root_ok"))
+    rows = ""
+    for r in results:
+        ok = bool(r.get("api_ok") or r.get("root_ok"))
+        cls = "ok" if ok else "bad"
+        badge = "KALON" if ok else "NUK KALON"
+        rows += f"""
+        <tr style="background:{'#dcfce7' if ok else '#fee2e2'}">
+          <td><b>{r.get('name')}</b><br><span class="small">{r.get('note','')}</span></td>
+          <td><code>{r.get('server')}</code></td>
+          <td class="{cls}"><b>{badge}</b></td>
+          <td>{r.get('status','')}</td>
+          <td>{r.get('expiry','')}</td>
+          <td>{r.get('connections','')}</td>
+          <td>{r.get('ip','')}</td>
+          <td><a class="btn gray" href="/servers/test/{r.get('id')}">Details</a></td>
+        </tr>
+        """
+
+    client_options = "".join(
+        f'<option value="{slug}" {"selected" if slug == selected_slug else ""}>{c.get("name", slug)} ({slug})</option>'
+        for slug, c in sorted(clients.items())
+    )
+
+    body = f"""
+    <div class="card">
+      <h2>TEST ALL Server Templates</h2>
+      <p class="small">Testuar me klientin: <b>{client_name}</b>. Kaluan: <b>{ok_count}/{len(results)}</b></p>
+      <form method="get" action="/servers/test-all">
+        <label>Zgjedh klientin për username/password test</label>
+        <select name="client_slug">{client_options}</select>
+        <button>Test All Again</button>
+        <a class="btn gray" href="/servers">Back</a>
+      </form>
+    </div>
+    <div class="card">
+      <table>
+        <tr><th>Name</th><th>Server</th><th>Result</th><th>Status</th><th>Expiry</th><th>Conn</th><th>IP</th><th>Details</th></tr>
+        {rows or '<tr><td colspan="8">Nuk ka serverë.</td></tr>'}
+      </table>
+    </div>
+    """
+    return admin_page(body)
+
+
+@app.route("/servers/test/<sid>")
+def server_test(sid):
+    if not login_required():
+        return redirect("/login")
+    servers = load_server_templates()
+    server = next((s for s in servers if s.get("id") == sid), None)
+    if not server:
+        abort(404)
+
+    clients = load_clients()
+    results = []
+    for slug, c in sorted(clients.items()):
+        username = c.get("username") or ""
+        password = c.get("password") or ""
+        if not username or not password:
+            try:
+                p = parse_m3u_link(c.get("m3u_link", ""))
+                username = p["username"]
+                password = p["password"]
+            except Exception:
+                pass
+        if username and password:
+            res = test_server_template(server.get("server"), username, password)
+            res["client"] = c.get("name", slug)
+            res["slug"] = slug
+            results.append(res)
+
+    if not results:
+        res = test_server_template(server.get("server"))
+        results.append(res)
+
+    rows = ""
+    for r in results:
+        cls = "ok" if r.get("api_ok") or r.get("root_ok") else "bad"
+        rows += f"""
+        <tr>
+          <td>{r.get('client','-')}<br><span class="small">{r.get('slug','')}</span></td>
+          <td class="{cls}">{'OK' if cls == 'ok' else 'Problem'}</td>
+          <td>{r.get('status','')}</td>
+          <td>{r.get('expiry','')}</td>
+          <td>{r.get('connections','')}</td>
+          <td>{r.get('ip','')}</td>
+          <td><pre>{json.dumps(r, ensure_ascii=False, indent=2)}</pre></td>
+        </tr>
+        """
+
+    body = f"""
+    <div class="card">
+      <h2>Test Server: {server.get('name')}</h2>
+      <p>Server: <code>{server.get('server')}</code></p>
+      <a class="btn gray" href="/servers">Back</a>
+      <table>
+        <tr><th>Client</th><th>Root/API</th><th>Status</th><th>Expiry</th><th>Conn</th><th>IP</th><th>Raw</th></tr>
+        {rows}
+      </table>
+    </div>
+    """
+    return admin_page(body)
+
+
+@app.route("/servers/apply/<sid>", methods=["POST"])
+def server_apply(sid):
+    if not login_required():
+        return redirect("/login")
+    client_slug = request.form.get("client_slug")
+    servers = load_server_templates()
+    server = next((s for s in servers if s.get("id") == sid), None)
+    if not server or not client_slug:
+        abort(404)
+
+    clients = load_clients()
+    c = clients.get(client_slug)
+    if not c:
+        abort(404)
+
+    new_server = normalize_base(server.get("server"))
+    c["server"] = new_server
+
+    if c.get("mode") != "template":
+        try:
+            p = parse_m3u_link(c.get("m3u_link", ""))
+            c["username"] = p["username"]
+            c["password"] = p["password"]
+        except Exception:
+            pass
+        c["mode"] = "template"
+
+    if c.get("username") and c.get("password"):
+        c["m3u_link"] = f"{new_server.rstrip('/')}/get.php?username={c.get('username')}&password={c.get('password')}&type=m3u_plus&output={c.get('output','ts')}"
+
+    clients[client_slug] = c
+    save_clients(clients)
+    cp = cache_path(client_slug)
+    if cp.exists():
+        cp.unlink()
+    return redirect(f"/edit/{client_slug}")
+
+
 @app.route("/status")
 def status_page():
     if not login_required():
@@ -1080,16 +1623,40 @@ def import_clients():
     return admin_page(body)
 
 
+
+@app.route("/auto-backup")
+def auto_backup_download():
+    if not login_required():
+        return redirect("/login")
+    save_auto_backup()
+    if AUTO_BACKUP_FILE.exists():
+        return Response(
+            AUTO_BACKUP_FILE.read_text(encoding="utf-8"),
+            mimetype="application/json",
+            headers={"Content-Disposition": "attachment; filename=noxiptv_backup.json"}
+        )
+    return Response("{}", mimetype="application/json")
+
+@app.route("/github-sync")
+def github_sync_now():
+    if not login_required():
+        return redirect("/login")
+    data = build_full_backup()
+    github_auto_sync(data)
+    return admin_page("<div class='card'><h2>GitHub Sync</h2><p class='ok'>Sync u provua. Kontrollo GitHub file-in noxiptv_backup.json.</p></div>")
+
+
 @app.route("/backup")
 def backup_all():
     if not login_required():
         return redirect("/login")
     data = {
-        "version": "v7.8.4",
+        "version": API_VERSION,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "clients": load_clients(),
         "master_template": get_template_text(),
-        "note": "Backup contains clients and master template. Keep private."
+        "server_templates": load_server_templates(),
+        "note": "Backup contains clients, master template and server templates. Keep private."
     }
     return Response(
         json.dumps(data, ensure_ascii=False, indent=2),
@@ -1112,6 +1679,7 @@ def restore_backup():
             data = json.loads(raw)
             clients = data.get("clients", {})
             master_template = data.get("master_template", "")
+            server_templates = data.get("server_templates", [])
             if not isinstance(clients, dict):
                 raise ValueError("Backup clients nuk është valid.")
             if master_template and "#EXTM3U" not in master_template[:1000]:
@@ -1119,6 +1687,8 @@ def restore_backup():
             save_clients(clients)
             if master_template:
                 save_template_text(master_template)
+            if isinstance(server_templates, list):
+                save_server_templates(server_templates)
             clear_all_cache()
             msg = "<p class='ok'>Restore u krye me sukses. Cache u pastrua.</p>"
         except Exception as e:
@@ -1210,7 +1780,7 @@ def watch_login():
                 if not ok:
                     log_event("login_blocked_device_limit", slug, status="blocked", extra={"used": used, "max": maxd})
                     return client_page(f"""
-                    <div class="top"><h2>Nox IPTV</h2></div>
+                    <div class="top"><h2>NOX IPTV</h2></div>
                     <div class="wrap"><div class="player"><p style="color:#fca5a5">Device limit arritur: {used}/{maxd}</p><a class="btn" href="/watch">Kthehu</a></div></div>
                     """)
                 session["client_slug"] = slug
@@ -1219,11 +1789,11 @@ def watch_login():
                 resp.set_cookie("nox_device_id", did, max_age=60*60*24*365)
                 return resp
         return client_page("""
-        <div class="top"><h2>Nox IPTV VLC Portal</h2></div>
+        <div class="top"><h2>NOX IPTV VLC Portal</h2></div>
         <div class="wrap"><div class="player"><p style="color:#fca5a5">Login gabim.</p><a class="btn" href="/watch">Provo prapë</a></div></div>
         """)
     body = """
-    <div class="top"><h2>Nox IPTV VLC Portal</h2></div>
+    <div class="top"><h2>NOX IPTV VLC Portal</h2></div>
     <div class="wrap">
       <div class="player">
         <h3>Client Login</h3>
@@ -1236,6 +1806,422 @@ def watch_login():
     </div>
     """
     return client_page(body)
+
+
+
+
+
+
+
+
+@app.route("/c/<slug>/<int:channel_id>.m3u")
+def single_channel_playlist(slug, channel_id):
+    """Clean single-channel M3U for VLC."""
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="audio/x-mpegurl", status=404)
+        it = items[channel_id]
+        name = it.get("name", "Channel")
+        group = it.get("group", "")
+        url = it.get("url", "")
+        body = "#EXTM3U\n"
+        body += f'#EXTINF:-1 tvg-name="{name}" group-title="{group}",{name}\n'
+        body += f"{url}\n"
+        return Response(
+            body,
+            mimetype="audio/x-mpegurl",
+            headers={
+                "Content-Type": "audio/x-mpegurl; charset=utf-8",
+                "Content-Disposition": f"inline; filename={slug}-{channel_id}.m3u",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    except Exception as e:
+        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
+
+
+
+
+
+
+
+def build_proxy_playlist_for_client(slug):
+    """
+    Build M3U where every stream URL points to NOX proxy.
+    VLC/browser then use the same relay engine instead of direct provider URLs.
+    """
+    text = get_playlist_for_client(slug, force_refresh=False)
+    items = parse_m3u_items(text)
+    base = request.url_root.rstrip("/")
+    lines = ["#EXTM3U"]
+    for idx, it in enumerate(items):
+        extinf = it.get("extinf") or f'#EXTINF:-1,{it.get("name","Channel")}'
+        lines.append(extinf)
+        lines.append(f"{base}/proxy/{slug}/{idx}")
+    return "\n".join(lines) + "\n"
+
+
+
+def b64url_encode_text(s):
+    return base64.urlsafe_b64encode(s.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def b64url_decode_text(s):
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode((s + pad).encode("ascii")).decode("utf-8")
+
+
+def make_hls_candidate_url(stream_url):
+    """
+    Try common Xtream HLS form:
+    http://host/user/pass/id  -> http://host/live/user/pass/id.m3u8
+    http://host/live/user/pass/id.ts -> http://host/live/user/pass/id.m3u8
+    """
+    try:
+        p = urlparse(stream_url)
+        parts = [x for x in p.path.split("/") if x]
+        if len(parts) >= 4 and parts[0] == "live":
+            user, pwd, sid = parts[1], parts[2], parts[3]
+            sid = sid.replace(".ts", "").replace(".m3u8", "")
+            return urlunparse((p.scheme, p.netloc, f"/live/{user}/{pwd}/{sid}.m3u8", "", "", ""))
+        if len(parts) >= 3:
+            user, pwd, sid = parts[0], parts[1], parts[2]
+            sid = sid.replace(".ts", "").replace(".m3u8", "")
+            return urlunparse((p.scheme, p.netloc, f"/live/{user}/{pwd}/{sid}.m3u8", "", "", ""))
+    except Exception:
+        pass
+    return stream_url
+
+
+@app.route("/browser/hls/<slug>/<int:channel_id>")
+def browser_hls_manifest(slug, channel_id):
+    """
+    Browser-only HLS manifest proxy/rewrite.
+    This helps iPhone Safari when provider supports HLS but original list gives TS.
+    """
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="application/vnd.apple.mpegurl", status=404)
+
+        original = items[channel_id]["url"]
+        candidates = []
+        if ".m3u8" in original.lower():
+            candidates.append(original)
+        candidates.append(make_hls_candidate_url(original))
+        candidates.append(original)
+
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+        }
+
+        last_error = ""
+        resp = None
+        for cand in candidates:
+            try:
+                r = requests.get(cand, headers=headers, timeout=(8, 16), allow_redirects=True)
+                sample = r.text[:500] if r.text else ""
+                if r.status_code < 400 and "#EXTM3U" in sample:
+                    resp = r
+                    break
+                last_error = f"{cand} -> {r.status_code}"
+            except Exception as e:
+                last_error = f"{cand} -> {e}"
+
+        if resp is None:
+            return Response(f"#EXTM3U\n# ERROR: HLS not available. {last_error}\n", mimetype="application/vnd.apple.mpegurl", status=502)
+
+        base_url = resp.url
+        out = []
+        for line in resp.text.splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):
+                # Also rewrite URI="key" attributes if present
+                if 'URI="' in line:
+                    def repl_key(m):
+                        key_url = urljoin(base_url, m.group(1))
+                        return 'URI="' + url_for("browser_hls_asset", encoded=b64url_encode_text(key_url)) + '"'
+                    line = re.sub(r'URI="([^"]+)"', repl_key, line)
+                out.append(line)
+            else:
+                abs_url = urljoin(base_url, s)
+                out.append(url_for("browser_hls_asset", encoded=b64url_encode_text(abs_url)))
+        return Response(
+            "\n".join(out) + "\n",
+            mimetype="application/vnd.apple.mpegurl",
+            headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*"}
+        )
+    except Exception as e:
+        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="application/vnd.apple.mpegurl", status=500)
+
+
+@app.route("/browser/hls-asset/<encoded>")
+def browser_hls_asset(encoded):
+    """
+    HLS segment/key proxy.
+    """
+    try:
+        asset_url = b64url_decode_text(encoded)
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+        }
+        upstream = requests.get(asset_url, headers=headers, stream=True, timeout=(8, None), allow_redirects=True)
+        content_type = upstream.headers.get("Content-Type", "video/mp2t")
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    upstream.close()
+                except Exception:
+                    pass
+        return Response(
+            stream_with_context(generate()),
+            mimetype=content_type,
+            headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*", "X-Accel-Buffering": "no"},
+            direct_passthrough=True,
+        )
+    except Exception as e:
+        return Response(f"HLS asset error: {e}", status=500)
+
+
+@app.route("/proxy/<slug>/<int:channel_id>")
+def proxy_channel(slug, channel_id):
+    """
+    Public proxy stream for VLC playlist.
+    It relays the real provider stream with VLC-friendly headers.
+    """
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("Channel not found", status=404)
+
+        stream_url = items[channel_id]["url"]
+        upstream_headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+            "Icy-MetaData": "0",
+        }
+
+        last_error = None
+        upstream = None
+        for _attempt in range(3):
+            try:
+                upstream = requests.get(
+                    stream_url,
+                    headers=upstream_headers,
+                    stream=True,
+                    timeout=(10, None),
+                    allow_redirects=True,
+                )
+                if upstream.status_code < 500:
+                    break
+            except Exception as e:
+                last_error = e
+                upstream = None
+                time.sleep(0.7)
+
+        if upstream is None:
+            return Response(f"Proxy upstream error: {last_error}", status=502)
+
+        content_type = upstream.headers.get("Content-Type", "video/mp2t")
+        low = content_type.lower()
+        if "text" in low or "html" in low:
+            content_type = "video/mp2t"
+
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    upstream.close()
+                except Exception:
+                    pass
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype=content_type,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Access-Control-Allow-Origin": "*",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+            direct_passthrough=True,
+        )
+    except Exception as e:
+        return Response(f"Proxy error: {e}", status=500)
+
+
+@app.route("/vlc-list/<slug>.m3u")
+@app.route("/playlist/<slug>.m3u")
+def playlist_alias_for_vlc(slug):
+    """
+    VLC-friendly full playlist with PROXY stream URLs.
+    This is the key V7.8 change.
+    """
+    try:
+        text = build_proxy_playlist_for_client(slug)
+        return Response(
+            text,
+            mimetype="audio/x-mpegurl",
+            headers={
+                "Content-Type": "audio/x-mpegurl; charset=utf-8",
+                "Content-Disposition": f"inline; filename={slug}-proxy.m3u",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+    except Exception as e:
+        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="audio/x-mpegurl", status=500)
+
+
+@app.route("/vlc/iphone/<slug>/<int:channel_id>")
+@app.route("/vlc/iphone/<slug>")
+def open_vlc_iphone(slug, channel_id=None):
+    playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
+    enc = requests.utils.quote(playlist_url, safe="")
+
+    # CONFIRMED WORKING ON iPHONE: Method 2
+    method_2 = "vlc-x-callback://x-callback-url/stream?url=" + enc
+
+    # Backup methods
+    method_1 = "vlc://x-callback-url/stream?url=" + enc
+    method_3 = "vlc://" + enc
+
+    return client_page(f"""
+    <div class="top"><h2>NOX IPTV VLC iPhone</h2></div>
+    <div class="wrap">
+      <div class="player">
+        <h3>iPhone VLC</h3>
+        <p class="ok"><b>Default:</b> Method 2, sepse kjo u konfirmua që punon.</p>
+        <p>
+          <a class="btn" id="primary" href="{method_2}">🎥  Hap në VLC iPhone</a>
+          <a class="btn gray" href="{method_1}">Backup Method 1</a>
+          <a class="btn gray" href="{method_3}">Backup Method 3</a>
+        </p>
+        <p>
+          <a class="btn gray" href="{playlist_url}">Open playlist file</a>
+          <button class="btn gray" onclick="navigator.clipboard.writeText('{playlist_url}').then(()=>alert('Playlist URL u kopjua'))">Copy playlist URL</button>
+          <a class="btn gray" href="/watch/home">Back</a>
+        </p>
+        <p class="hint">Playlist URL:<br><code>{playlist_url}</code></p>
+      </div>
+    </div>
+    <script>
+      setTimeout(function() {{
+        window.location.href = "{method_2}";
+      }}, 500);
+    </script>
+    """)
+
+
+@app.route("/vlc/android/<slug>/<int:channel_id>")
+@app.route("/vlc/android/<slug>")
+def open_vlc_android(slug, channel_id=None):
+    playlist_url = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
+    p = urlparse(playlist_url)
+    clean = playlist_url.replace("https://", "").replace("http://", "")
+    scheme = p.scheme or "https"
+
+    # CONFIRMED WORKING ON ANDROID: Intent Video
+    intent_video = (
+        "intent://" + clean +
+        "#Intent;scheme=" + scheme +
+        ";action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE" +
+        ";package=org.videolan.vlc;type=video/*;S.title=NOXIPTV;end"
+    )
+
+    # Backup methods
+    intent_m3u = (
+        "intent://" + clean +
+        "#Intent;scheme=" + scheme +
+        ";action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE" +
+        ";package=org.videolan.vlc;type=audio/x-mpegurl;S.title=NOXIPTV;end"
+    )
+    vlc_scheme = "vlc://" + requests.utils.quote(playlist_url, safe="")
+
+    return client_page(f"""
+    <div class="top"><h2>NOX IPTV VLC Android</h2></div>
+    <div class="wrap">
+      <div class="player">
+        <h3>Android VLC</h3>
+        <p class="ok"><b>Default:</b> Intent Video, sepse kjo u konfirmua që punon.</p>
+        <p>
+          <a class="btn" id="primary" href="{intent_video}">🎥 🤖 Hap në VLC Android</a>
+          <a class="btn gray" href="{intent_m3u}">Backup Intent M3U</a>
+          <a class="btn gray" href="{vlc_scheme}">Backup VLC Scheme</a>
+        </p>
+        <p>
+          <a class="btn gray" href="{playlist_url}">Open playlist file</a>
+          <button class="btn gray" onclick="navigator.clipboard.writeText('{playlist_url}').then(()=>alert('Playlist URL u kopjua'))">Copy playlist URL</button>
+          <a class="btn gray" href="/watch/home">Back</a>
+        </p>
+        <p class="hint">Playlist URL:<br><code>{playlist_url}</code></p>
+      </div>
+    </div>
+    <script>
+      setTimeout(function() {{
+        window.location.href = "{intent_video}";
+      }}, 500);
+    </script>
+    """)
+
+
+@app.route("/watch/debug")
+def watch_debug():
+    if not client_login_required():
+        return redirect("/watch")
+    slug = session["client_slug"]
+    try:
+        text = get_playlist_for_client(slug, force_refresh=True)
+        items = parse_m3u_items(text)[:30]
+        full_playlist = request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug)
+        iphone = request.url_root.rstrip("/") + url_for("open_vlc_iphone", slug=slug)
+        android = request.url_root.rstrip("/") + url_for("open_vlc_android", slug=slug)
+
+        rows = ""
+        for idx, it in enumerate(items):
+            rows += f"<tr><td>{idx}</td><td>{it.get('name')}</td><td><code>{it.get('url')}</code></td></tr>"
+
+        return client_page(f"""
+        <div class="top"><h2>NOX IPTV Debug</h2></div>
+        <div class="wrap"><div class="player">
+          <h3>VLC Proxy Playlist Debug</h3>
+          <p>Proxy playlist: <code>{full_playlist}</code></p>
+          <p>iPhone launcher: <code>{iphone}</code></p>
+          <p>Android launcher: <code>{android}</code></p>
+          <p><a class="btn" href="{full_playlist}">Open playlist file</a>
+             <a class="btn gray" href="{iphone}">Test iPhone VLC</a>
+             <a class="btn gray" href="{android}">Test Android VLC</a>
+             <a class="btn gray" href="/watch/home">Back</a></p>
+          <h3>First 30 generated channel URLs</h3>
+          <table>{rows}</table>
+        </div></div>
+        """)
+    except Exception as e:
+        return client_page(f"<div class='top'><h2>Debug</h2></div><div class='wrap'><div class='player'>Error: {e}</div></div>")
 
 
 @app.route("/watch/logout")
@@ -1259,74 +2245,93 @@ def watch_home():
         text = get_playlist_for_client(slug, force_refresh=False)
         items = parse_m3u_items(text)
     except Exception as e:
-        return client_page(f"""
-        <div class="top"><h2>Nox IPTV Player</h2></div>
-        <div class="wrap"><div class="player"><p>Problem: {e}</p></div></div>
-        """)
+        return client_page(f"<div class='top'><h2>NOX IPTV {APP_VERSION}</h2></div><div class='wrap'><div class='player'><p>Problem: {e}</p></div></div>")
 
-    groups = sorted(set(i["group"] for i in items))
+    sport_keys = ["ART SPORT", "SUPER SPORT", "TRING SPORT", "KUJTESA SPORT", "EUROSPORT", "FIGHT BOX", "FIGHTBOX"]
     safe_items = []
     for idx, it in enumerate(items):
-        safe_items.append({
-            "i": idx,
-            "name": it["name"],
-            "group": it["group"],
-            "logo": it["logo"],
-            "url": it["url"],
-        })
+        name_up = it["name"].upper()
+        group_up = it["group"].upper()
+        is_sport = any(k in name_up or k in group_up for k in sport_keys)
+        safe_items.append({"i": idx, "name": it["name"], "group": it["group"], "logo": it["logo"], "url": it["url"], "sport": is_sport})
 
-    settings = get_settings()
     data_json = json.dumps(safe_items, ensure_ascii=False)
-    settings_json = json.dumps(settings, ensure_ascii=False)
-    brand = settings.get("brand_name", "Nox IPTV")
-
     body = f"""
     <style>
-      .layout {{ display:grid; grid-template-columns:230px 1fr; gap:12px; }}
-      .side {{ background:#111827; border-radius:16px; padding:12px; height:fit-content; position:sticky; top:92px; }}
-      .cat {{ display:block; width:100%; text-align:left; margin:6px 0; background:#1f2937; }}
-      .cat.active {{ background:{settings.get('brand_color','#2563eb')}; }}
-      @media(max-width:800px) {{ .layout {{ grid-template-columns:1fr; }} .side {{ position:relative; top:0; }} }}
+      body {{ background:#050b14 !important; color:#e5e7eb !important; }}
+      .top {{ background:linear-gradient(135deg,#050b14,#0f172a,#1d4ed8) !important; padding:18px !important; }}
+      .brandrow {{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }}
+      .brandrow img {{ width:54px; height:54px; border-radius:17px; box-shadow:0 10px 30px #0008; }}
+      .brandtitle {{ font-size:26px; font-weight:900; }}
+      .versionpill {{ font-size:12px; background:#2563eb; padding:3px 8px; border-radius:999px; margin-left:8px; }}
+      .watch-shell {{ display:grid; grid-template-columns:260px minmax(0,1fr); gap:14px; }}
+      .side {{ background:rgba(15,23,42,.97); border:1px solid #1f2937; border-radius:24px; padding:14px; height:fit-content; position:sticky; top:92px; box-shadow:0 12px 35px #0007; }}
+      .cat {{ display:block; width:100%; margin:7px 0; text-align:left; background:#1f2937; border-radius:14px; }}
+      .cat.active {{ background:#2563eb; }}
+      .playerbox {{ background:rgba(15,23,42,.97); border:1px solid #1f2937; border-radius:26px; padding:14px; margin-bottom:14px; box-shadow:0 12px 45px #0007; }}
+      .players.one {{ display:grid; grid-template-columns:1fr; gap:12px; }}
+      .players.two {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+      .screen {{ background:#020617; border:1px solid #1f2937; border-radius:22px; overflow:hidden; }}
+      video {{ width:100%; height:370px; background:#000; display:block; }}
+      .screenbar {{ padding:11px; display:flex; justify-content:space-between; gap:8px; background:#111827; align-items:center; }}
+      .badge {{ padding:5px 10px; border-radius:999px; background:#475569; font-size:12px; }}
+      .badge.on {{ background:#16a34a; }} .badge.fail {{ background:#dc2626; }}
+      .controls {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }}
+      .vlcbtn {{ display:inline-flex; align-items:center; gap:7px; font-size:15px; }}
+      .vlcico {{ width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:7px; background:#ffffff22; }}
+      .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:11px; }}
+      .ch {{ background:#111827; border:1px solid #1f2937; border-radius:18px; padding:11px; cursor:pointer; min-height:78px; transition:.15s; }}
+      .ch:hover {{ border-color:#2563eb; transform:translateY(-1px); }}
+      .logo {{ width:42px; height:42px; object-fit:contain; float:left; margin-right:10px; background:#ffffff10; border-radius:12px; }}
+      .name {{ font-size:14px; font-weight:850; }}
+      .group {{ clear:both; font-size:12px; color:#94a3b8; margin-top:6px; }}
+      .searchbar {{ display:flex; gap:10px; flex-wrap:wrap; }}
+      .searchbar input {{ flex:1; min-width:260px; }}
+      .helpbox {{ color:#94a3b8; font-size:13px; line-height:1.45; margin-top:10px; }}
+      @media(max-width:850px) {{
+        .watch-shell {{ grid-template-columns:1fr; }}
+        .players.two {{ grid-template-columns:1fr; }}
+        video {{ height:250px; }}
+        .side {{ position:relative; top:0; }}
+      }}
     </style>
+
     <div class="top">
-      <h2>{brand} - {c.get('name')}</h2>
-      <div class="bar">
-        <input id="search" placeholder="Kërko kanal...">
-        <select id="group">
-          <option value="">Të gjitha kategoritë</option>
-          <option value="__fav">⭐ Favorites</option>
-          <option value="__recent">🕘 Recently watched</option>
-          <option value="Shqip">Shqip</option>
-          <option value="Sport">Sport</option>
-          <option value="Gjermani">Gjermani</option>
-          {''.join(f'<option value="{g}">{g}</option>' for g in groups)}
-        </select>
-        <a class="btn red" href="/watch/logout">Logout</a>
+      <div class="brandrow">
+        <img src="/static/nox_logo.svg">
+        <div><div class="brandtitle">NOX IPTV <span class="versionpill">{APP_VERSION}</span></div><div class="hint">{c.get('name')}</div></div>
       </div>
+      <div class="searchbar"><input id="search" placeholder="Kërko kanal..."><a class="btn red" href="/watch/logout">Logout</a></div>
     </div>
-    <div class="wrap layout">
+
+    <div class="wrap watch-shell">
       <div class="side">
-        <button class="btn cat active" onclick="setGroup('')">Të gjitha</button>
-        <button class="btn cat" onclick="setGroup('__fav')">⭐ Favorites</button>
-        <button class="btn cat" onclick="setGroup('__recent')">🕘 Recent</button>
-        <button class="btn cat" onclick="setGroup('Shqip')">Shqip</button>
-        <button class="btn cat" onclick="setGroup('Sport')">Sport</button>
-        <button class="btn cat" onclick="setGroup('Gjermani')">Gjermani</button>
+        <button class="btn cat active" onclick="setGroup('', this)">Të gjitha</button>
+        <button class="btn cat" onclick="setGroup('__fav', this)">⭐ Favorites</button>
+        <button class="btn cat" onclick="setGroup('__recent', this)">🕘 Recent</button>
+        <button class="btn cat" onclick="setGroup('Sport', this)">Sport</button>
+        <hr style="border-color:#1f2937">
+        <button class="btn gray cat" onclick="setTarget(1)">Target Screen 1</button>
+        <button class="btn gray cat" onclick="setTarget(2)">Target Screen 2</button>
+        <button class="btn gray cat" onclick="toggleTwo()">1 / 2 Ekrane</button>
+        <div class="helpbox">Primare: iPhone. VLC hap listën komplet të klientit dhe para hapjes ndalet browser-i.</div>
       </div>
+
       <div>
-        <div class="player">
-          <video id="video" controls playsinline webkit-playsinline preload="none"></video>
-          <div class="now" id="now">Zgjedh një kanal.</div>
-          <p>
+        <div class="playerbox">
+          <div id="players" class="players one">
+            <div class="screen"><video id="video1" controls playsinline webkit-playsinline></video><div class="screenbar"><span id="now1">Screen 1</span><span id="badge1" class="badge">IDLE</span></div></div>
+            <div class="screen" id="screen2" style="display:none"><video id="video2" controls playsinline webkit-playsinline></video><div class="screenbar"><span id="now2">Screen 2</span><span id="badge2" class="badge">IDLE</span></div></div>
+          </div>
+          <div class="controls">
             <button class="btn" onclick="retryCurrent()">Retry</button>
-            <button class="btn gray" onclick="stopPlayer()">Stop</button>
+            <button class="btn gray" onclick="stopTarget()">Stop</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
-            <a class="btn gray" id="openVlcIphone" href="#">Open VLC iPhone</a>
-            <a class="btn gray" id="openVlcAndroid" href="#">Open VLC Android</a>
-            <a class="btn gray" id="openVlcClassic" href="#">Open VLC Classic</a>
-            <a class="btn gray" id="openDirect" href="#" target="_blank">Open Direct</a>
-          </p>
-          <p class="hint" id="hint">Smart engine aktiv: browser → proxy → direct/VLC fallback.</p>
+            <a class="btn gray vlcbtn" id="openVlcIphone" href="#"><span class="vlcico">🎥</span><span class="vlcico"></span> VLC iPhone</a>
+            <a class="btn gray vlcbtn" id="openVlcAndroid" href="#"><span class="vlcico">🎥</span><span class="vlcico">🤖</span> VLC Android</a>
+            <a class="btn gray" href="/watch/debug">Debug</a>
+          </div>
+          <p class="hint" id="hint">Kliko kanal. Browser modern engine aktiv; VLC përdor logjikën funksionale V7.8.4.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -1334,41 +2339,47 @@ def watch_home():
 
     <script>
       const channels = {data_json};
-      const settings = {settings_json};
-      let currentUrl = "";
-      let currentChannel = null;
-      let playToken = 0;
+      let currentGroup = "";
+      let target = 1;
+      let current = {{1:null,2:null}};
+      let hlsMap = {{1:null,2:null}};
+      let tsMap = {{1:null,2:null}};
+      let watchdog = {{1:null,2:null}};
+      let reconnects = {{1:0,2:0}};
+      let manualStop = {{1:false,2:false}};
+      let lastTime = {{1:0,2:0}};
       const favKey = "nox_favorites_{slug}";
       const recentKey = "nox_recent_{slug}";
 
-      function getFavs() {{ return JSON.parse(localStorage.getItem(favKey) || "[]"); }}
+      function getFavs() {{ return JSON.parse(localStorage.getItem(favKey)||"[]"); }}
       function setFavs(v) {{ localStorage.setItem(favKey, JSON.stringify(v)); }}
-      function getRecent() {{ return JSON.parse(localStorage.getItem(recentKey) || "[]"); }}
-      function setRecent(v) {{ localStorage.setItem(recentKey, JSON.stringify(v.slice(0, 30))); }}
+      function getRecent() {{ return JSON.parse(localStorage.getItem(recentKey)||"[]"); }}
+      function setRecent(v) {{ localStorage.setItem(recentKey, JSON.stringify(v.slice(0,40))); }}
 
-      function customCategory(ch) {{
-        const text = ((ch.name || "") + " " + (ch.group || "")).toUpperCase();
-        const cats = settings.custom_categories || {{}};
-        for (const cat in cats) {{
-          for (const key of cats[cat]) {{
-            if (text.includes(String(key).toUpperCase())) return cat;
-          }}
-        }}
-        return ch.group;
-      }}
-
-      function setGroup(g) {{
-        document.getElementById("group").value = g;
-        document.querySelectorAll(".cat").forEach(x => x.classList.remove("active"));
+      function setGroup(g, el) {{
+        currentGroup=g;
+        document.querySelectorAll(".cat").forEach(x=>x.classList.remove("active"));
+        if(el) el.classList.add("active");
         render();
       }}
 
-      function updateExternalLinks(url) {{
+      function setTarget(n) {{ target=n; document.getElementById("hint").innerText="Kanali tjetër hapet në Screen "+n; }}
+
+      function toggleTwo() {{
+        const p=document.getElementById("players"), s2=document.getElementById("screen2");
+        if(p.classList.contains("one")){{p.classList.remove("one");p.classList.add("two");s2.style.display="";}}
+        else{{p.classList.remove("two");p.classList.add("one");s2.style.display="none";target=1;stopScreen(2);}}
+      }}
+
+      function markRecent(ch) {{ let r=getRecent().filter(x=>x!==ch.i); r.unshift(ch.i); setRecent(r); }}
+      function toggleFavorite() {{ const ch=current[target]; if(!ch)return; let f=getFavs(); if(f.includes(ch.i))f=f.filter(x=>x!==ch.i); else f.push(ch.i); setFavs(f); render(); }}
+
+function updateExternalLinks(url) {{
         const clean = url.replace(/^https?:\\/\\//, "");
         const scheme = url.startsWith("https://") ? "https" : "http";
 
-        // WORKING LOGIC FROM UPLOADED VERSION:
-        // Build VLC links directly in browser from selected channel URL.
+        // WORKING VLC LOGIC FROM V7.8.4:
+        // VLC links are generated directly in browser from the selected channel URL.
         const androidIntent = "intent://" + clean + "#Intent;scheme=" + scheme + ";package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
         const iphoneVlc = "vlc-x-callback://x-callback-url/stream?url=" + encodeURIComponent(url);
 
@@ -1383,141 +2394,175 @@ def watch_home():
         if (direct) direct.href = url;
       }}
 
-      function markRecent(ch) {{
-        let rec = getRecent().filter(x => x !== ch.i);
-        rec.unshift(ch.i);
-        setRecent(rec);
+      function setBadge(n, text, cls) {{
+        const b=document.getElementById("badge"+n); b.className="badge "+(cls||""); b.innerText=text;
       }}
 
-      function toggleFavorite() {{
-        if (!currentChannel) return;
-        let favs = getFavs();
-        if (favs.includes(currentChannel.i)) favs = favs.filter(x => x !== currentChannel.i);
-        else favs.push(currentChannel.i);
-        setFavs(favs);
-        render();
+      function stopScreen(n) {{
+        manualStop[n]=true;
+        if(watchdog[n]){{clearInterval(watchdog[n]);watchdog[n]=null;}}
+        const v=document.getElementById("video"+n);
+        if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}hlsMap[n]=null;}}
+        if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}tsMap[n]=null;}}
+        try{{v.pause();}}catch(e){{}} v.removeAttribute("src"); v.load(); setBadge(n,"STOP","");
+      }}
+
+      function stopAllScreens() {{
+        stopScreen(1);
+        stopScreen(2);
+      }}
+
+      function openVlc(kind) {{
+        const ch = current[target];
+        if(!ch) {{
+          alert("Zgjedh një kanal së pari.");
+          return;
+        }}
+        updateExternalLinks(ch.url);
+        if(kind === "iphone") {{
+          window.location.href = document.getElementById("openVlcIphone").href;
+        }} else {{
+          window.location.href = document.getElementById("openVlcAndroid").href;
+        }}
+      }}
+
+      function stopTarget() {{ stopScreen(target); }}
+
+      function startWatchdog(n) {{
+        if(watchdog[n]) clearInterval(watchdog[n]);
+        lastTime[n]=document.getElementById("video"+n).currentTime||0;
+        watchdog[n]=setInterval(()=>{{
+          const v=document.getElementById("video"+n), ch=current[n];
+          if(!ch || manualStop[n]) return;
+          const now=v.currentTime||0;
+          const stuck=v.readyState>=2 && !v.paused && Math.abs(now-lastTime[n])<0.03;
+          const ended=v.ended || (isFinite(v.duration) && v.duration>0 && now>=v.duration-0.4);
+          if(stuck || ended) {{
+            reconnects[n]+=1; setBadge(n,"RELOAD "+reconnects[n],"");
+            if(reconnects[n]<=4) playBrowser(ch,n,true); else setBadge(n,"VLC","fail");
+          }}
+          lastTime[n]=now;
+        }}, 8000);
       }}
 
       function playChannel(ch) {{
-        currentChannel = ch;
-        currentUrl = ch.url;
-        markRecent(ch);
-        updateExternalLinks(ch.url);
-        try {{ navigator.sendBeacon("/watch/log", JSON.stringify({{channel: ch.name, id: ch.i, event: "channel_click"}})); }} catch(e) {{}}
-        document.getElementById("now").innerText = ch.name + " — " + ch.group;
-        startPlayer(ch);
+        current[target]=ch; markRecent(ch); updateExternalLinks(ch.url); reconnects[target]=0; manualStop[target]=false;
+        document.getElementById("now"+target).innerText=ch.name;
+        setBadge(target,"LOAD","");
+        try{{navigator.sendBeacon("/watch/log", JSON.stringify({{channel:ch.name,id:ch.i,event:"channel_click"}}));}}catch(e){{}}
+        playBrowser(ch,target);
       }}
 
-      function stopPlayer() {{
-        const video = document.getElementById("video");
-        if (window.hls) {{ try {{ window.hls.destroy(); }} catch(e) {{}} window.hls = null; }}
-        if (window.tsPlayer) {{
-          try {{ window.tsPlayer.pause(); }} catch(e) {{}}
-          try {{ window.tsPlayer.unload(); }} catch(e) {{}}
-          try {{ window.tsPlayer.detachMediaElement(); }} catch(e) {{}}
-          try {{ window.tsPlayer.destroy(); }} catch(e) {{}}
-          window.tsPlayer = null;
-        }}
-        try {{ video.pause(); }} catch(e) {{}}
-        video.removeAttribute("src");
-        video.load();
-      }}
+      function playBrowser(ch,n,isReconnect=false) {{
+        if(!isReconnect) reconnects[n]=0;
+        manualStop[n]=false;
+        if(watchdog[n]){{clearInterval(watchdog[n]);watchdog[n]=null;}}
+        stopScreen(n); manualStop[n]=false;
 
-      function startPlayer(ch) {{
-        playToken += 1;
-        const token = playToken;
-        const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
-        const proxyUrl = "/watch/stream/" + ch.i + "?t=" + Date.now();
-        stopPlayer();
-        const lower = ch.url.toLowerCase();
-        hint.innerText = "Duke u lidhur...";
+        const v=document.getElementById("video"+n);
+        const lower=ch.url.toLowerCase();
 
-        video.onplaying = () => {{ if (token === playToken) hint.innerText = "Live tani."; }};
-        video.onwaiting = () => {{ if (token === playToken) hint.innerText = "Duke ngarkuar..."; }};
-        video.onerror = () => {{ if (token === playToken) tryProxy(ch, token); }};
+        v.onplaying=function(){{setBadge(n,"LIVE","on");document.getElementById("hint").innerText="Live në browser.";startWatchdog(n);}};
+        v.onpause=function(){{if(!manualStop[n]&&current[n])setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.paused){{try{{v.play();}}catch(e){{}} setTimeout(()=>{{if(v.paused)playBrowser(current[n],n,true);}},1200);}}}},800);}};
+        v.onended=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
+        v.onstalled=function(){{if(!manualStop[n]&&current[n])playBrowser(current[n],n,true);}};
+        v.onerror=function(){{setBadge(n,"TRY",""); tryBrowserHlsProxy(ch,n); }};
 
-        if (lower.includes(".m3u8") && Hls.isSupported()) {{
-          window.hls = new Hls({{lowLatencyMode:true, liveSyncDurationCount:2, maxBufferLength:12, enableWorker:true}});
-          window.hls.loadSource(ch.url);
-          window.hls.attachMedia(video);
-          window.hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => tryProxy(ch, token)));
-          window.hls.on(Hls.Events.ERROR, (event, data) => {{ if (data.fatal) tryProxy(ch, token); }});
-        }} else if (lower.includes(".m3u8") && video.canPlayType("application/vnd.apple.mpegurl")) {{
-          video.src = ch.url;
-          video.play().catch(() => tryProxy(ch, token));
+        // Browser Smart Engine:
+        // 1) Native/direct HLS if channel is already .m3u8
+        // 2) NOX HLS candidate proxy (helps iPhone if provider supports hidden HLS)
+        // 3) MPEGTS proxy with mpegts.js (best for Android/PC)
+        // 4) direct video fallback
+        if(lower.includes(".m3u8")) {{
+          playHlsSource(ch.url, ch, n, function(){{ tryBrowserHlsProxy(ch,n); }});
         }} else {{
-          tryProxy(ch, token);
+          tryBrowserHlsProxy(ch,n);
         }}
       }}
 
-      function tryProxy(ch, token) {{
-        const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
-        const proxyUrl = "/watch/stream/" + ch.i + "?t=" + Date.now();
-        hint.innerText = "Duke provuar proxy...";
-        if (window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
+      function playHlsSource(src,ch,n,onFail) {{
+        const v=document.getElementById("video"+n);
+        setBadge(n,"HLS","");
+        if(Hls.isSupported()) {{
           try {{
-            window.tsPlayer = mpegts.createPlayer({{type:"mpegts", isLive:true, url:proxyUrl, cors:false, enableStashBuffer:false, stashInitialSize:64}});
-            window.tsPlayer.attachMediaElement(video);
-            window.tsPlayer.load();
-            window.tsPlayer.play();
-          }} catch(e) {{
-            tryDirect(ch, token);
-          }}
+            if(hlsMap[n]){{try{{hlsMap[n].destroy();}}catch(e){{}}}}
+            hlsMap[n]=new Hls({{lowLatencyMode:true,liveSyncDurationCount:3,maxBufferLength:45,backBufferLength:15,enableWorker:true,fragLoadingTimeOut:20000,manifestLoadingTimeOut:12000}});
+            let parsed=false;
+            hlsMap[n].loadSource(src);
+            hlsMap[n].attachMedia(v);
+            hlsMap[n].on(Hls.Events.MANIFEST_PARSED,()=>{{parsed=true;v.play().catch(()=>{{ if(onFail)onFail(); }});}});
+            hlsMap[n].on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal && onFail)onFail();}});
+            setTimeout(()=>{{if(!manualStop[n]&&current[n]&&!parsed&&onFail)onFail();}},9000);
+          }} catch(e) {{ if(onFail)onFail(); }}
+        }} else if(v.canPlayType("application/vnd.apple.mpegurl")) {{
+          v.src=src;
+          v.play().catch(()=>{{ if(onFail)onFail(); }});
+          setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.readyState<2&&onFail)onFail();}},9000);
         }} else {{
-          video.src = proxyUrl;
-          video.play().catch(() => tryDirect(ch, token));
+          if(onFail)onFail();
         }}
       }}
 
-      function tryDirect(ch, token) {{
-        const video = document.getElementById("video");
-        const hint = document.getElementById("hint");
-        hint.innerText = "Duke provuar direct...";
-        video.src = ch.url;
-        video.play().catch(() => {{
-          hint.innerText = "Browser nuk e hapi. Përdor VLC iPhone/Android.";
-          const ua = navigator.userAgent.toLowerCase();
-          if (settings.vlc_auto_fallback && ua.includes("android")) {{
-            setTimeout(() => {{ window.location.href = document.getElementById("openVlcAndroid").href; }}, 800);
-          }}
-        }});
+      function tryBrowserHlsProxy(ch,n) {{
+        if(manualStop[n]) return;
+        const hlsProxy="/browser/hls/{slug}/"+ch.i+"?t="+Date.now();
+        document.getElementById("hint").innerText="Po provohet HLS proxy për browser...";
+        playHlsSource(hlsProxy,ch,n,function(){{ playMpegts("/proxy/{slug}/"+ch.i+"?t="+Date.now(),n); }});
       }}
 
-      function retryCurrent() {{ if (currentChannel) startPlayer(currentChannel); }}
+      function playMpegts(src,n) {{
+        const v=document.getElementById("video"+n);
+        setBadge(n,"TS","");
+        if(window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
+          try {{
+            if(tsMap[n]){{try{{tsMap[n].destroy();}}catch(e){{}}}}
+            tsMap[n]=mpegts.createPlayer({{type:"mpegts",isLive:true,url:src,cors:false,enableStashBuffer:true,stashInitialSize:1536,lazyLoad:false,autoCleanupSourceBuffer:true,autoCleanupMaxBackwardDuration:30,autoCleanupMinBackwardDuration:10,fixAudioTimestampGap:true}});
+            tsMap[n].on(mpegts.Events.ERROR,function(){{ 
+              if(!manualStop[n]&&current[n]) {{
+                setBadge(n,"RETRY","");
+                setTimeout(()=>tryDirectVideo(current[n],n),1000);
+              }}
+            }});
+            tsMap[n].attachMediaElement(v);
+            tsMap[n].load();
+            tsMap[n].play();
+            setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.readyState<2)tryDirectVideo(current[n],n);}},11000);
+          }} catch(e) {{ tryDirectVideo(current[n],n); }}
+        }} else {{
+          tryDirectVideo(current[n],n);
+        }}
+      }}
+
+      function tryDirectVideo(ch,n) {{
+        if(!ch || manualStop[n]) return;
+        const v=document.getElementById("video"+n);
+        setBadge(n,"DIRECT","");
+        v.src=ch.url;
+        v.play().catch(()=>{{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Browser nuk e dekodoi këtë kanal. Provo VLC iPhone/Android."; }});
+        setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.readyState<2){{setBadge(n,"VLC","fail");document.getElementById("hint").innerText="Ky kanal nuk u hap në browser. Provo VLC.";}}}},9000);
+      }}
+
+      function retryCurrent() {{ if(current[target]){{manualStop[target]=false;reconnects[target]=0;playBrowser(current[target],target);}} }}
 
       function render() {{
-        const q = document.getElementById("search").value.toLowerCase();
-        const g = document.getElementById("group").value;
-        const favs = getFavs();
-        const rec = getRecent();
-        const box = document.getElementById("channels");
-        box.innerHTML = "";
-        channels.filter(ch => {{
-          let okGroup = true;
-          if (g === "__fav") okGroup = favs.includes(ch.i);
-          else if (g === "__recent") okGroup = rec.includes(ch.i);
-          else if (g === "Shqip" || g === "Sport" || g === "Gjermani") okGroup = customCategory(ch) === g;
-          else okGroup = (!g || ch.group === g);
-          return (!q || ch.name.toLowerCase().includes(q)) && okGroup;
-        }}).slice(0, 800).forEach(ch => {{
-          const div = document.createElement("div");
-          div.className = "ch";
-          div.onclick = () => playChannel(ch);
-          div.innerHTML = `${{ch.logo ? `<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">` : ""}}
-            <div class="name">${{favs.includes(ch.i) ? "⭐ " : ""}}${{ch.name}}</div>
-            <div class="group">${{customCategory(ch)}} · ${{ch.group}}</div>`;
-          box.appendChild(div);
+        const q=document.getElementById("search").value.toLowerCase(), favs=getFavs(), rec=getRecent(), box=document.getElementById("channels");
+        box.innerHTML="";
+        channels.filter(ch=>{{
+          let ok=true;
+          if(currentGroup==="__fav")ok=favs.includes(ch.i); else if(currentGroup==="__recent")ok=rec.includes(ch.i); else if(currentGroup==="Sport")ok=ch.sport;
+          return ok && (!q || ch.name.toLowerCase().includes(q));
+        }}).slice(0,800).forEach(ch=>{{
+          const d=document.createElement("div"); d.className="ch"; d.onclick=()=>playChannel(ch);
+          d.innerHTML=`${{ch.logo?`<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">`:""}}<div class="name">${{favs.includes(ch.i)?"⭐ ":""}}${{ch.name}}</div><div class="group">${{ch.sport?"Sport":ch.group}}</div>`;
+          box.appendChild(d);
         }});
       }}
-
-      document.getElementById("search").addEventListener("input", render);
-      document.getElementById("group").addEventListener("change", render);
-      render();
+      document.getElementById("search").addEventListener("input",render); render();
     </script>
     """
     return client_page(body)
+
+
 
 
 @app.route("/watch/log", methods=["POST"])
@@ -1528,9 +2573,41 @@ def watch_log_event():
     data = request.get_json(silent=True) or {}
     ch = data.get("channel", "")
     ev = data.get("event", "event")
-    increment_channel_stat(slug, ch)
-    log_event(ev, slug, ch, status="client")
+    try:
+        increment_channel_stat(slug, ch)
+    except Exception:
+        pass
+    try:
+        log_event(ev, slug, ch, status="client")
+    except Exception:
+        pass
     return {"ok": True}
+
+
+
+@app.route("/watch/stream/<int:channel_id>")
+def watch_stream_proxy(channel_id):
+    if not client_login_required():
+        return Response("Not logged in", status=401)
+    slug = session["client_slug"]
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("Channel not found", status=404)
+        stream_url = items[channel_id]["url"]
+        headers = {"User-Agent":"VLC/3.0.20 LibVLC/3.0.20","Accept":"*/*","Accept-Encoding":"identity","Connection":"keep-alive"}
+        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(8, None), allow_redirects=True)
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=32*1024):
+                    if chunk: yield chunk
+            finally:
+                try: upstream.close()
+                except Exception: pass
+        return Response(generate(), mimetype="video/mp2t", headers={"Cache-Control":"no-cache","Access-Control-Allow-Origin":"*","X-Accel-Buffering":"no"}, direct_passthrough=True)
+    except Exception as e:
+        return Response(f"Stream proxy error: {e}", status=500)
 
 
 # ---------------- Native Android App API ----------------
@@ -1549,7 +2626,7 @@ def api_login():
                 "ok": True,
                 "slug": slug,
                 "name": c.get("name", slug),
-                "m3u_url": request.url_root.rstrip("/") + url_for("playlist", slug=slug),
+                "m3u_url": request.url_root.rstrip("/") + url_for("playlist_alias_for_vlc", slug=slug),
             }
     return {"ok": False, "error": "Login gabim"}, 401
 
@@ -1634,46 +2711,155 @@ def settings_page():
         return redirect("/login")
     s = get_settings()
     msg = ""
+
+    presets = {
+        "modern_blue": {"brand_color":"#2563eb","accent_color":"#22c55e","background_color":"#0b1220","card_color":"#111827","text_color":"#e5e7eb"},
+        "premium_gold": {"brand_color":"#d97706","accent_color":"#facc15","background_color":"#111827","card_color":"#1f2937","text_color":"#fff7ed"},
+        "neon_purple": {"brand_color":"#7c3aed","accent_color":"#06b6d4","background_color":"#09090b","card_color":"#18181b","text_color":"#f4f4f5"},
+        "red_sport": {"brand_color":"#dc2626","accent_color":"#f97316","background_color":"#0f172a","card_color":"#1e293b","text_color":"#f8fafc"},
+        "light_clean": {"brand_color":"#2563eb","accent_color":"#16a34a","background_color":"#f1f5f9","card_color":"#ffffff","text_color":"#0f172a"}
+    }
+
     if request.method == "POST":
-        s["brand_name"] = request.form.get("brand_name", "Nox IPTV")
-        s["brand_color"] = request.form.get("brand_color", "#2563eb")
-        s["accent_color"] = request.form.get("accent_color", "#16a34a")
+        preset = request.form.get("theme_preset", s.get("theme_preset", "modern_blue"))
+        s["theme_preset"] = preset
+        if request.form.get("apply_preset") == "on" and preset in presets:
+            s.update(presets[preset])
+
+        s["brand_name"] = request.form.get("brand_name", "NOX IPTV")
+        s["logo_text"] = request.form.get("logo_text", "NOX")
+        s["logo_url"] = request.form.get("logo_url", "/static/nox_logo.svg")
+        s["brand_color"] = request.form.get("brand_color", s.get("brand_color", "#2563eb"))
+        s["accent_color"] = request.form.get("accent_color", s.get("accent_color", "#16a34a"))
+        s["background_color"] = request.form.get("background_color", s.get("background_color", "#0b1220"))
+        s["card_color"] = request.form.get("card_color", s.get("card_color", "#111827"))
+        s["text_color"] = request.form.get("text_color", s.get("text_color", "#e5e7eb"))
+        s["layout_mode"] = request.form.get("layout_mode", "sidebar")
+        s["player_position"] = request.form.get("player_position", "top")
+        s["card_style"] = request.form.get("card_style", "rounded")
         s["smart_engine"] = request.form.get("smart_engine") == "on"
         s["auto_fallback"] = request.form.get("auto_fallback") == "on"
         s["vlc_auto_fallback"] = request.form.get("vlc_auto_fallback") == "on"
         save_settings(s)
         msg = "<p class='ok'>Settings u ruajtën.</p>"
+
+    def sel(name):
+        return "selected" if s.get("theme_preset") == name else ""
+
     body = f"""
-    <div class="card"><h2>Branding / Smart Engine Settings</h2>{msg}
+    <style>
+      .preview {{ background:{s.get('background_color','#0b1220')}; color:{s.get('text_color','#e5e7eb')}; padding:18px; border-radius:18px; }}
+      .preview-card {{ background:{s.get('card_color','#111827')}; padding:15px; border-radius:16px; margin-top:10px; }}
+      .colorrow {{ display:grid; grid-template-columns:160px 1fr 90px; gap:10px; align-items:center; }}
+      .colorrow input[type=color] {{ height:44px; padding:2px; }}
+    </style>
+    <div class="card">
+      <h2>Branding / Smart Engine Settings</h2>
+      {msg}
       <form method="post">
-        <label>Brand name</label><input name="brand_name" value="{s.get('brand_name','Nox IPTV')}">
-        <label>Brand color</label><input name="brand_color" value="{s.get('brand_color','#2563eb')}">
-        <label>Accent color</label><input name="accent_color" value="{s.get('accent_color','#16a34a')}">
-        <label><input style="width:auto" type="checkbox" name="smart_engine" {'checked' if s.get('smart_engine') else ''}> Smart stream engine</label><br>
-        <label><input style="width:auto" type="checkbox" name="auto_fallback" {'checked' if s.get('auto_fallback') else ''}> Auto fallback</label><br>
-        <label><input style="width:auto" type="checkbox" name="vlc_auto_fallback" {'checked' if s.get('vlc_auto_fallback') else ''}> Auto VLC fallback on Android</label><br><br>
+        <div class="grid">
+          <div class="card">
+            <h3>Logo / Brand</h3>
+            <label>Brand name</label>
+            <input name="brand_name" value="{s.get('brand_name','NOX IPTV')}">
+            <label>Logo text</label>
+            <input name="logo_text" value="{s.get('logo_text','NOX')}">
+            <label>Logo image URL optional</label>
+            <input name="logo_url" value="{s.get('logo_url','/static/nox_logo.svg')}" placeholder="/static/nox_logo.svg ose https://.../logo.png">
+          </div>
+
+          <div class="card">
+            <h3>Theme Preset</h3>
+            <label>Choose design</label>
+            <select name="theme_preset">
+              <option value="modern_blue" {sel('modern_blue')}>Modern Blue</option>
+              <option value="premium_gold" {sel('premium_gold')}>Premium Gold</option>
+              <option value="neon_purple" {sel('neon_purple')}>Neon Purple</option>
+              <option value="red_sport" {sel('red_sport')}>Red Sport</option>
+              <option value="light_clean" {sel('light_clean')}>Light Clean</option>
+            </select>
+            <label><input style="width:auto" type="checkbox" name="apply_preset"> Apply preset colors</label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Advanced Colors</h3>
+          <div class="colorrow"><label>Main color</label><input type="color" name="brand_color" value="{s.get('brand_color','#2563eb')}"><input name="brand_color_text" value="{s.get('brand_color','#2563eb')}" disabled></div>
+          <div class="colorrow"><label>Accent color</label><input type="color" name="accent_color" value="{s.get('accent_color','#16a34a')}"><input value="{s.get('accent_color','#16a34a')}" disabled></div>
+          <div class="colorrow"><label>Background</label><input type="color" name="background_color" value="{s.get('background_color','#0b1220')}"><input value="{s.get('background_color','#0b1220')}" disabled></div>
+          <div class="colorrow"><label>Cards</label><input type="color" name="card_color" value="{s.get('card_color','#111827')}"><input value="{s.get('card_color','#111827')}" disabled></div>
+          <div class="colorrow"><label>Text</label><input type="color" name="text_color" value="{s.get('text_color','#e5e7eb')}"><input value="{s.get('text_color','#e5e7eb')}" disabled></div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <h3>Layout</h3>
+            <label>Layout mode</label>
+            <select name="layout_mode">
+              <option value="sidebar" {'selected' if s.get('layout_mode')=='sidebar' else ''}>Sidebar categories</option>
+              <option value="topbar" {'selected' if s.get('layout_mode')=='topbar' else ''}>Topbar compact</option>
+            </select>
+            <label>Player position</label>
+            <select name="player_position">
+              <option value="top" {'selected' if s.get('player_position')=='top' else ''}>Top</option>
+              <option value="sticky" {'selected' if s.get('player_position')=='sticky' else ''}>Sticky</option>
+            </select>
+            <label>Card style</label>
+            <select name="card_style">
+              <option value="rounded" {'selected' if s.get('card_style')=='rounded' else ''}>Rounded</option>
+              <option value="sharp" {'selected' if s.get('card_style')=='sharp' else ''}>Sharp</option>
+              <option value="glass" {'selected' if s.get('card_style')=='glass' else ''}>Glass</option>
+            </select>
+          </div>
+
+          <div class="card">
+            <h3>Smart Engine</h3>
+            <label><input style="width:auto" type="checkbox" name="smart_engine" {'checked' if s.get('smart_engine') else ''}> Smart stream engine</label><br>
+            <label><input style="width:auto" type="checkbox" name="auto_fallback" {'checked' if s.get('auto_fallback') else ''}> Auto fallback browser/proxy</label><br>
+            <label><input style="width:auto" type="checkbox" name="vlc_auto_fallback" {'checked' if s.get('vlc_auto_fallback') else ''}> Auto VLC fallback Android</label>
+          </div>
+        </div>
+
+        <div class="preview">
+          <h3>Live Preview</h3>
+          <div class="preview-card">
+            <b>{s.get('brand_name','NOX IPTV')}</b><br>
+            Channel card preview · Sport · Live
+          </div>
+        </div>
+        <br>
         <button>Save Settings</button>
       </form>
-    </div>"""
+    </div>
+    """
     return admin_page(body)
 
 
 @app.route("/manifest.json")
 def pwa_manifest():
     s = get_settings()
-    return {"name": s.get("brand_name","Nox IPTV"), "short_name": s.get("brand_name","Nox IPTV"), "start_url": "/watch", "display": "standalone", "background_color": "#0b1220", "theme_color": s.get("brand_color","#2563eb"), "icons": []}
+    return {"name": s.get("brand_name","NOX IPTV"), "short_name": s.get("brand_name","NOX IPTV"), "start_url": "/watch", "display": "standalone", "background_color": "#0b1220", "theme_color": s.get("brand_color","#2563eb"), "icons": []}
 
 
 @app.route("/sw.js")
 def service_worker():
     return Response("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());", mimetype="application/javascript")
 
+
+@app.route("/watch/capabilities")
+def watch_capabilities():
+    return {
+        "ok": True,
+        "browser_methods": ["hls_proxy", "hls_direct", "mpegts_proxy", "direct_video", "proxy_direct_video"],
+        "note": "V6.3."
+    }
+
 @app.route("/health")
 def health():
     return {
         "ok": True,
         "service": "noxiptv",
-        "version": "v7.8.4",
+        "version": API_VERSION,
         "time": datetime.now().isoformat(),
         "clients": len(load_clients()),
         "template_channels": get_template_text().count("#EXTINF"),
