@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V9.0
+NOX IPTV CLOUD PANEL V9.1
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -80,8 +80,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V9.0"
-API_VERSION = "v9.0"
+APP_VERSION = "V9.1"
+API_VERSION = "v9.1"
 
 
 HEADERS = {
@@ -661,7 +661,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V9.0</title>
+  <title>NOX IPTV V9.1</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -695,7 +695,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#7c3aed;color:white;padding:4px 8px;border-radius:999px;">V9.0 Fresh</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#0ea5e9;color:white;padding:4px 8px;border-radius:999px;">V9.1 App Launcher</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -734,7 +734,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V9.0</title>
+  <title>NOX IPTV V9.1</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -2424,7 +2424,6 @@ def watch_home():
             "raw_group": it["group"],
             "logo": it["logo"],
             "url": it["url"],
-            "is_hls": ".m3u8" in it["url"].lower(),
         })
 
     data_json = json.dumps(safe_items, ensure_ascii=False)
@@ -2433,37 +2432,35 @@ def watch_home():
     body = f"""
     <style>
       body {{ background:#050816!important; color:#e5e7eb!important; }}
-      .top {{ background:linear-gradient(135deg,#060817,#111827,#4c1d95)!important; padding:18px!important; border-bottom:1px solid #26324a; }}
-      .brand {{ display:flex; align-items:center; gap:13px; }}
+      .top {{ background:linear-gradient(135deg,#020617,#0f172a,#0369a1)!important; padding:18px!important; border-bottom:1px solid #26324a; }}
+      .brand {{ display:flex;align-items:center;gap:13px; }}
       .brand img {{ width:52px;height:52px;border-radius:18px;box-shadow:0 12px 35px #0008; }}
       .brand h2 {{ margin:0;font-size:26px;font-weight:900;letter-spacing:.2px; }}
-      .vtag {{ font-size:12px;background:#7c3aed;color:white;border-radius:999px;padding:4px 9px;margin-left:8px; }}
+      .vtag {{ font-size:12px;background:#0ea5e9;color:white;border-radius:999px;padding:4px 9px;margin-left:8px; }}
       .toolbar {{ display:flex;gap:10px;flex-wrap:wrap;margin-top:14px; }}
       .toolbar input,.toolbar select {{ flex:1;min-width:210px;background:#0b1220;border:1px solid #31405e;border-radius:14px;padding:13px;color:white; }}
       .shell {{ display:grid;grid-template-columns:260px 1fr;gap:14px;max-width:1280px;margin:auto;padding:14px; }}
       .side,.cardx {{ background:rgba(15,23,42,.96);border:1px solid #26324a;border-radius:24px;box-shadow:0 15px 45px #0008; }}
       .side {{ padding:14px;height:fit-content;position:sticky;top:95px; }}
       .cat {{ width:100%;display:block;text-align:left;margin:7px 0;background:#1e293b;border-radius:16px; }}
-      .cat.active {{ background:#7c3aed; }}
-      .playerbox {{ padding:14px;margin-bottom:14px; }}
-      video {{ width:100%;height:420px;background:#000;border-radius:22px;display:block; }}
-      .now {{ display:flex;justify-content:space-between;gap:10px;align-items:center;margin:12px 0 4px; }}
-      .now h3 {{ margin:0;font-size:22px; }}
-      .badge {{ font-size:12px;background:#475569;border-radius:999px;padding:6px 10px; }}
-      .badge.live {{ background:#16a34a; }} .badge.fail {{ background:#dc2626; }} .badge.load {{ background:#7c3aed; }}
-      .controls {{ display:flex;gap:8px;flex-wrap:wrap;margin-top:12px; }}
-      .btn {{ border-radius:14px!important;padding:11px 14px!important;font-weight:800!important; }}
+      .cat.active {{ background:#0ea5e9; }}
+      .hero {{ padding:18px;margin-bottom:14px; }}
+      .hero h3 {{ margin:0 0 8px;font-size:23px; }}
+      .hero .status {{ background:#020617;border:1px solid #26324a;border-radius:18px;padding:13px;margin-top:12px; }}
+      .controls {{ display:flex;gap:8px;flex-wrap:wrap;margin-top:13px; }}
+      .btn {{ border-radius:14px!important;padding:11px 14px!important;font-weight:850!important; }}
       .grid {{ display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:11px; }}
-      .ch {{ background:#0f172a;border:1px solid #26324a;border-radius:20px;padding:12px;cursor:pointer;min-height:84px;transition:.12s; }}
-      .ch:hover {{ border-color:#8b5cf6;transform:translateY(-1px); }}
+      .ch {{ background:#0f172a;border:1px solid #26324a;border-radius:20px;padding:12px;cursor:pointer;min-height:88px;transition:.12s; }}
+      .ch:hover {{ border-color:#38bdf8;transform:translateY(-1px); }}
       .logo {{ width:46px;height:46px;object-fit:contain;float:left;margin-right:11px;background:#ffffff12;border-radius:14px; }}
       .name {{ font-size:15px;font-weight:900;line-height:1.25; }}
       .group {{ clear:both;color:#94a3b8;font-size:12px;margin-top:8px; }}
       .hint {{ color:#94a3b8;font-size:13px;line-height:1.45; }}
+      .selected {{ border-color:#0ea5e9!important;box-shadow:0 0 0 1px #0ea5e9aa; }}
+      .mini {{ font-size:12px;color:#94a3b8; }}
       @media(max-width:850px) {{
         .shell {{ grid-template-columns:1fr;padding:10px; }}
         .side {{ position:relative;top:0; }}
-        video {{ height:245px; }}
         .brand h2 {{ font-size:22px; }}
       }}
     </style>
@@ -2471,7 +2468,7 @@ def watch_home():
     <div class="top">
       <div class="brand">
         <img src="/static/nox_logo.svg" onerror="this.style.display='none'">
-        <div><h2>{brand}<span class="vtag">V9.0</span></h2><div class="hint">{c.get('name', slug)}</div></div>
+        <div><h2>{brand}<span class="vtag">V9.1</span></h2><div class="hint">{c.get('name', slug)}</div></div>
       </div>
       <div class="toolbar">
         <input id="search" placeholder="Kërko kanal...">
@@ -2487,25 +2484,32 @@ def watch_home():
         <button class="btn cat" onclick="setGroup('__recent',this)">🕘 Recent</button>
         <button class="btn cat" onclick="setGroup('Sport',this)">Sport</button>
         <hr style="border-color:#26324a">
-        <button class="btn gray cat" onclick="playMode='auto';updateMode()">Auto Browser</button>
-        <button class="btn gray cat" onclick="playMode='ffmpeg';updateMode()">Browser HLS</button>
-        <button class="btn gray cat" onclick="playMode='transcode';updateMode()">Browser HLS+</button>
-        <div class="hint" id="modeText">Mode: Auto Browser</div>
+        <button class="btn gray cat" onclick="setAppMode('auto')">Auto App</button>
+        <button class="btn gray cat" onclick="setAppMode('iphone')">Force iPhone VLC</button>
+        <button class="btn gray cat" onclick="setAppMode('android')">Force Android VLC</button>
+        <button class="btn gray cat" onclick="setAppMode('direct')">Open Direct</button>
+        <div class="hint" id="modeText">Mode: Auto App</div>
       </div>
 
       <div>
-        <div class="cardx playerbox">
-          <video id="video" controls playsinline webkit-playsinline preload="none"></video>
-          <div class="now"><h3 id="now">Zgjedh një kanal</h3><span id="badge" class="badge">IDLE</span></div>
+        <div class="cardx hero">
+          <h3 id="now">Zgjedh një kanal</h3>
+          <div class="hint">
+            Ekrani në browser është hequr. Çdo kanal hapet direkt në app të jashtëm.
+            Android përdor VLC Intent, iPhone përdor VLC x-callback.
+          </div>
           <div class="controls">
-            <button class="btn" onclick="retryCurrent()">Retry</button>
-            <button class="btn gray" onclick="stopPlayer()">Stop</button>
+            <button class="btn" onclick="openSelected()">Hap kanalin</button>
             <button class="btn gray" onclick="toggleFavorite()">⭐ Favorite</button>
             <a class="btn gray" id="openVlcIphone" href="#">🎥  VLC iPhone</a>
             <a class="btn gray" id="openVlcAndroid" href="#">🎥 🤖 VLC Android</a>
             <a class="btn gray" id="openDirect" href="#" target="_blank">Open Direct</a>
+            <button class="btn gray" onclick="copyUrl()">Copy URL</button>
           </div>
-          <p class="hint" id="hint">Auto provon browser. Nëse kanali është raw TS/iPhone, përdor Browser HLS+ ose VLC.</p>
+          <div class="status">
+            <div id="hint">Kliko një kanal. Në telefon do hapet direkt në VLC/app.</div>
+            <div class="mini" id="urlPreview"></div>
+          </div>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -2514,96 +2518,78 @@ def watch_home():
     <script>
       const channels = {data_json};
       let currentChannel=null;
-      let playMode="auto";
-      let hls=null, tsPlayer=null, playToken=0;
+      let appMode=localStorage.getItem("nox_app_mode_{slug}") || "auto";
       const favKey="nox_fav_{slug}", recKey="nox_rec_{slug}";
-
       function favs(){{return JSON.parse(localStorage.getItem(favKey)||"[]")}}
       function setFavs(v){{localStorage.setItem(favKey,JSON.stringify(v))}}
       function recents(){{return JSON.parse(localStorage.getItem(recKey)||"[]")}}
       function setRec(v){{localStorage.setItem(recKey,JSON.stringify(v.slice(0,40)))}}
 
-      function setBadge(t,c){{const b=document.getElementById("badge");b.className="badge "+(c||"");b.innerText=t;}}
-      function updateMode(){{document.getElementById("modeText").innerText="Mode: "+(playMode==="auto"?"Auto Browser":playMode==="ffmpeg"?"Browser HLS":"Browser HLS+"); if(currentChannel) playChannel(currentChannel);}}
-      function setGroup(g,el){{document.getElementById("group").value=g;document.querySelectorAll(".cat").forEach(x=>x.classList.remove("active"));if(el)el.classList.add("active");render();}}
+      function isIOS(){{return /iphone|ipad|ipod/i.test(navigator.userAgent)}}
+      function isAndroid(){{return /android/i.test(navigator.userAgent)}}
 
-      function updateExternalLinks(url){{
+      function setAppMode(m){{
+        appMode=m; localStorage.setItem("nox_app_mode_{slug}",m);
+        document.getElementById("modeText").innerText="Mode: "+(m==="auto"?"Auto App":m==="iphone"?"Force iPhone VLC":m==="android"?"Force Android VLC":"Open Direct");
+        if(currentChannel) updateLinks(currentChannel.url);
+      }}
+
+      function updateLinks(url){{
         const clean=url.replace(/^https?:\\/\\//,"");
         const scheme=url.startsWith("https://")?"https":"http";
-        document.getElementById("openVlcIphone").href="vlc-x-callback://x-callback-url/stream?url="+encodeURIComponent(url);
-        document.getElementById("openVlcAndroid").href="intent://"+clean+"#Intent;scheme="+scheme+";package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
+
+        // iPhone method that previously worked best
+        const iphone1="vlc-x-callback://x-callback-url/stream?url="+encodeURIComponent(url);
+        const iphone2="vlc://x-callback-url/stream?url="+encodeURIComponent(url);
+
+        // Android method that was stable
+        const androidIntent="intent://"+clean+"#Intent;scheme="+scheme+";package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end";
+
+        document.getElementById("openVlcIphone").href=iphone1;
+        document.getElementById("openVlcIphone").dataset.backup=iphone2;
+        document.getElementById("openVlcAndroid").href=androidIntent;
         document.getElementById("openDirect").href=url;
+        document.getElementById("urlPreview").innerText=url;
       }}
 
-      function stopPlayer(){{
-        playToken++;
-        const v=document.getElementById("video");
-        if(hls){{try{{hls.destroy()}}catch(e){{}}hls=null}}
-        if(tsPlayer){{try{{tsPlayer.pause();tsPlayer.unload();tsPlayer.detachMediaElement();tsPlayer.destroy()}}catch(e){{}}tsPlayer=null}}
-        try{{v.pause()}}catch(e){{}} v.removeAttribute("src"); v.load(); setBadge("STOP","");
-      }}
-
-      function playChannel(ch){{
-        currentChannel=ch; updateExternalLinks(ch.url);
-        let r=recents().filter(x=>x!==ch.i);r.unshift(ch.i);setRec(r);
+      function selectChannel(ch, autoOpen=true){{
+        currentChannel=ch;
+        updateLinks(ch.url);
+        let r=recents().filter(x=>x!==ch.i); r.unshift(ch.i); setRec(r);
         document.getElementById("now").innerText=ch.name+" — "+(ch.raw_group||ch.group);
-        document.getElementById("hint").innerText="Duke hapur...";
-        startBrowser(ch);
+        document.getElementById("hint").innerText="Kanali u zgjodh. Po hapet në app...";
+        document.querySelectorAll(".ch").forEach(x=>x.classList.remove("selected"));
+        const el=document.querySelector(`[data-i="${{ch.i}}"]`); if(el)el.classList.add("selected");
+        try{{navigator.sendBeacon("/watch/log", JSON.stringify({{channel:ch.name,id:ch.i,event:"external_app_click"}}));}}catch(e){{}}
+        if(autoOpen) setTimeout(openSelected,120);
       }}
 
-      function startBrowser(ch){{
-        stopPlayer();
-        const token=++playToken;
-        const ua=navigator.userAgent.toLowerCase();
-        const isIOS=/iphone|ipad|ipod/.test(ua);
-        const lower=ch.url.toLowerCase();
-        setBadge("LOAD","load");
+      function openSelected(){{
+        if(!currentChannel){{alert("Zgjedh një kanal së pari.");return;}}
+        updateLinks(currentChannel.url);
+        const hint=document.getElementById("hint");
+        if(appMode==="direct"){{hint.innerText="Po hapet direct link..."; window.location.href=currentChannel.url; return;}}
+        if(appMode==="iphone"){{hint.innerText="Po hapet VLC iPhone..."; window.location.href=document.getElementById("openVlcIphone").href; return;}}
+        if(appMode==="android"){{hint.innerText="Po hapet VLC Android..."; window.location.href=document.getElementById("openVlcAndroid").href; return;}}
 
-        if(playMode==="ffmpeg") return playHls("/browser/ffmpeg/{slug}/"+ch.i+"/index.m3u8?mode=copy&t="+Date.now(), token, "FFMPEG");
-        if(playMode==="transcode") return playHls("/browser/ffmpeg/{slug}/"+ch.i+"/index.m3u8?mode=transcode&t="+Date.now(), token, "HLS+");
-
-        if(lower.includes(".m3u8")) return playHls(ch.url, token, "HLS");
-        if(isIOS) return playHls("/browser/ffmpeg/{slug}/"+ch.i+"/index.m3u8?mode=transcode&t="+Date.now(), token, "HLS+");
-        return playTs("/proxy/{slug}/"+ch.i+"?t="+Date.now(), token);
+        if(isIOS()) {{
+          hint.innerText="Po hapet VLC iPhone...";
+          window.location.href=document.getElementById("openVlcIphone").href;
+        }} else if(isAndroid()) {{
+          hint.innerText="Po hapet VLC Android...";
+          window.location.href=document.getElementById("openVlcAndroid").href;
+        }} else {{
+          hint.innerText="Desktop: po hapet direct stream...";
+          window.location.href=currentChannel.url;
+        }}
       }}
 
-      function playHls(src, token, label){{
-        const v=document.getElementById("video");
-        setBadge(label||"HLS","load");
-        let opened=false;
-        const timer=setTimeout(()=>{{if(!opened&&token===playToken)fail("Browser nuk e hapi këtë kanal. Provo HLS+ ose VLC.")}},8000);
-        v.onplaying=()=>{{opened=true;clearTimeout(timer);setBadge("LIVE","live");document.getElementById("hint").innerText="Live në browser."}};
-        v.onerror=()=>{{if(token===playToken)fail("HLS nuk u hap. Provo HLS+ ose VLC.")}};
-
-        if(Hls.isSupported()){{
-          try{{
-            hls=new Hls({{lowLatencyMode:true,liveSyncDurationCount:2,maxBufferLength:10,backBufferLength:4,enableWorker:true,startFragPrefetch:true}});
-            hls.loadSource(src); hls.attachMedia(v);
-            hls.on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>fail("HLS nuk u nis.")));
-            hls.on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal)fail("HLS fatal error.")}});
-          }}catch(e){{fail("HLS error.")}}
-        }} else if(v.canPlayType("application/vnd.apple.mpegurl")) {{
-          v.src=src; v.play().catch(()=>fail("Native HLS nuk u hap."));
-        }} else fail("Ky browser nuk suporton HLS.");
+      function copyUrl(){{
+        if(!currentChannel) return alert("Zgjedh një kanal së pari.");
+        navigator.clipboard.writeText(currentChannel.url).then(()=>alert("URL u kopjua"));
       }}
 
-      function playTs(src, token){{
-        const v=document.getElementById("video");
-        setBadge("TS","load");
-        let opened=false;
-        const timer=setTimeout(()=>{{if(!opened&&token===playToken)playHls("/browser/ffmpeg/{slug}/"+currentChannel.i+"/index.m3u8?mode=copy&t="+Date.now(), token, "FFMPEG")}},4500);
-        v.onplaying=()=>{{opened=true;clearTimeout(timer);setBadge("LIVE","live");document.getElementById("hint").innerText="Live në browser."}};
-        if(window.mpegts && mpegts.getFeatureList().mseLivePlayback){{
-          try{{
-            tsPlayer=mpegts.createPlayer({{type:"mpegts",isLive:true,url:src,cors:false,enableStashBuffer:false,stashInitialSize:128,lazyLoad:false}});
-            tsPlayer.on(mpegts.Events.ERROR,()=>playHls("/browser/ffmpeg/{slug}/"+currentChannel.i+"/index.m3u8?mode=copy&t="+Date.now(), token, "FFMPEG"));
-            tsPlayer.attachMediaElement(v); tsPlayer.load(); tsPlayer.play();
-          }}catch(e){{playHls("/browser/ffmpeg/{slug}/"+currentChannel.i+"/index.m3u8?mode=copy&t="+Date.now(), token, "FFMPEG")}}
-        }} else playHls("/browser/ffmpeg/{slug}/"+currentChannel.i+"/index.m3u8?mode=copy&t="+Date.now(), token, "FFMPEG");
-      }}
-
-      function fail(msg){{setBadge("VLC","fail");document.getElementById("hint").innerText=msg;}}
-      function retryCurrent(){{if(currentChannel)startBrowser(currentChannel)}}
+      function setGroup(g,el){{document.getElementById("group").value=g;document.querySelectorAll(".cat").forEach(x=>x.classList.remove("active"));if(el)el.classList.add("active");render();}}
       function toggleFavorite(){{if(!currentChannel)return;let f=favs();if(f.includes(currentChannel.i))f=f.filter(x=>x!==currentChannel.i);else f.push(currentChannel.i);setFavs(f);render()}}
 
       function render(){{
@@ -2613,15 +2599,15 @@ def watch_home():
           let ok=!g || ch.group===g || ch.raw_group===g;
           if(g==="__fav")ok=f.includes(ch.i); if(g==="__recent")ok=r.includes(ch.i);
           return ok && (!q || ch.name.toLowerCase().includes(q));
-        }}).slice(0,900).forEach(ch=>{{
-          const d=document.createElement("div");d.className="ch";d.onclick=()=>playChannel(ch);
+        }}).slice(0,1200).forEach(ch=>{{
+          const d=document.createElement("div");d.className="ch";d.dataset.i=ch.i;d.onclick=()=>selectChannel(ch,true);
           d.innerHTML=`${{ch.logo?`<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">`:""}}<div class="name">${{f.includes(ch.i)?"⭐ ":""}}${{ch.name}}</div><div class="group">${{ch.group}} · ${{ch.raw_group||""}}</div>`;
           box.appendChild(d);
         }});
       }}
       document.getElementById("search").addEventListener("input",render);
       document.getElementById("group").addEventListener("change",render);
-      fetch("/browser/ffmpeg-status").then(r=>r.json()).then(s=>{{if(!s.ffmpeg)document.getElementById("hint").innerText="FFmpeg nuk është aktiv në server. Për të gjitha kanalet në browser duhet Railway me ffmpeg.";}}).catch(()=>{{}});
+      setAppMode(appMode);
       render();
     </script>
     """
