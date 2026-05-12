@@ -1,19 +1,17 @@
-# NOX IPTV V7.9 Browser Smart Engine
+# NOX IPTV V8.0 Railway Native Engine
 
-Only browser playback changed:
-- HLS proxy/rewrite route added: /browser/hls/<slug>/<channel_id>
-- HLS asset proxy route added.
-- Browser tries:
-  1. Direct HLS if channel is m3u8
-  2. HLS candidate proxy
-  3. TS/MPEGTS proxy through /proxy/<slug>/<channel_id>
-  4. Direct video fallback
-- VLC/admin/server templates are not intended to change.
+Base:
+- Modern app with working V7.8.4/V7.9.1 VLC logic preserved.
 
-Important:
-iPhone Safari cannot play all raw TS channels without real ffmpeg transcoding.
-This version improves channels where provider has hidden HLS or browser-compatible streams.
+Changed only browser playback:
+- Fast router per channel.
+- Channel method memory.
+- Railway optimized TS proxy.
+- Fast HLS route for iPhone-compatible channels.
+- No slow multi-fallback waiting.
 
-Render:
-Build: pip install -r requirements.txt
-Start: gunicorn --workers 1 --threads 8 --timeout 0 app:app
+VLC logic:
+- Not changed.
+
+Run:
+gunicorn --workers 1 --threads 8 --timeout 0 app:app
