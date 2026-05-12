@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V7.9.2
+NOX IPTV CLOUD PANEL V8.0
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -37,6 +37,7 @@ LOGS_FILE = DATA_DIR / "logs.jsonl"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 DEVICE_FILE = DATA_DIR / "devices.json"
 CHANNEL_STATS_FILE = DATA_DIR / "channel_stats.json"
+CHANNEL_ENGINE_FILE = DATA_DIR / "channel_engine.json"
 SERVER_TEMPLATES_FILE = DATA_DIR / "server_templates.json"
 
 DEFAULT_SERVER_TEMPLATES = [
@@ -68,12 +69,12 @@ DEFAULT_SERVER_TEMPLATES = [
     {"id": "default-25", "name": "Server 26", "server": "http://egxbnjjg.smyia.com", "note": "default template", "created": "default"}
 ]
 
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "noxi69")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V7.9.2"
-API_VERSION = "v7.9.2"
+APP_VERSION = "V8.0"
+API_VERSION = "v8.0"
 
 
 HEADERS = {
@@ -292,6 +293,62 @@ def request_get(url, client=None):
     final_url = proxy_fetch_url(client or {}, url)
     return requests.get(final_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
 
+
+
+# ---------------- V8 Railway Native Browser Engine helpers ----------------
+
+def load_channel_engine():
+    try:
+        if CHANNEL_ENGINE_FILE.exists():
+            return json.loads(CHANNEL_ENGINE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def save_channel_engine(data):
+    try:
+        CHANNEL_ENGINE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def remember_channel_method(slug, channel_id, method):
+    try:
+        data = load_channel_engine()
+        key = f"{slug}::{channel_id}"
+        row = data.get(key, {})
+        row["method"] = method
+        row["last_ok"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        row["ok_count"] = int(row.get("ok_count", 0)) + 1
+        data[key] = row
+        save_channel_engine(data)
+    except Exception:
+        pass
+
+
+def get_remembered_channel_method(slug, channel_id):
+    try:
+        return (load_channel_engine().get(f"{slug}::{channel_id}", {}) or {}).get("method", "")
+    except Exception:
+        return ""
+
+
+def make_hls_candidate_url_fast(stream_url):
+    try:
+        p = urlparse(stream_url)
+        parts = [x for x in p.path.split("/") if x]
+        if len(parts) >= 4 and parts[0] == "live":
+            user, pwd, sid = parts[1], parts[2], parts[3]
+            sid = sid.replace(".ts", "").replace(".m3u8", "")
+            return urlunparse((p.scheme, p.netloc, f"/live/{user}/{pwd}/{sid}.m3u8", "", "", ""))
+        if len(parts) >= 3:
+            user, pwd, sid = parts[0], parts[1], parts[2]
+            sid = sid.replace(".ts", "").replace(".m3u8", "")
+            return urlunparse((p.scheme, p.netloc, f"/live/{user}/{pwd}/{sid}.m3u8", "", "", ""))
+    except Exception:
+        pass
+    return stream_url
 
 # ---------------- API / M3U ----------------
 
@@ -653,7 +710,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.9.2</title>
+  <title>NOX IPTV V8.0</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -687,7 +744,7 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#2563eb;color:white;padding:4px 8px;border-radius:999px;">V7.9.2</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#16a34a;color:white;padding:4px 8px;border-radius:999px;">V8.0 Railway</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -726,7 +783,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V7.9.2</title>
+  <title>NOX IPTV V8.0</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -1897,226 +1954,6 @@ def make_hls_candidate_url(stream_url):
 
 
 
-@app.route("/browser/probe/<slug>/<int:channel_id>")
-def browser_probe(slug, channel_id):
-    """
-    Fast browser probe:
-    returns likely best browser method without waiting too long.
-    """
-    try:
-        device = (request.args.get("device") or "").lower()
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return {"ok": False, "method": "none", "error": "channel not found"}, 404
-
-        url = items[channel_id]["url"]
-        lower = url.lower()
-
-        # iPhone Safari needs HLS. If raw is .m3u8, use direct immediately.
-        if ".m3u8" in lower:
-            return {"ok": True, "method": "direct_hls", "url": url}
-
-        # Android/PC usually start faster with mpegts proxy for TS.
-        if device in ("android", "pc"):
-            return {"ok": True, "method": "ts_proxy", "url": f"/proxy/{slug}/{channel_id}"}
-
-        # iPhone: try hidden HLS candidate with a very short test.
-        hls_candidate = make_hls_candidate_url(url) if "make_hls_candidate_url" in globals() else url
-        if hls_candidate != url:
-            try:
-                headers = {
-                    "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
-                    "Accept": "*/*",
-                    "Accept-Encoding": "identity",
-                    "Connection": "keep-alive",
-                }
-                r = requests.get(hls_candidate, headers=headers, timeout=(2, 3), allow_redirects=True)
-                if r.status_code < 400 and "#EXTM3U" in (r.text[:500] if r.text else ""):
-                    return {"ok": True, "method": "hls_proxy", "url": f"/browser/hls/{slug}/{channel_id}"}
-            except Exception:
-                pass
-
-        # Last browser option. On iPhone this may still fail if stream is raw TS codec.
-        return {"ok": True, "method": "ts_proxy", "url": f"/proxy/{slug}/{channel_id}"}
-    except Exception as e:
-        return {"ok": False, "method": "none", "error": str(e)}, 500
-
-
-@app.route("/browser/hls/<slug>/<int:channel_id>")
-def browser_hls_manifest(slug, channel_id):
-    """
-    Browser-only HLS manifest proxy/rewrite.
-    This helps iPhone Safari when provider supports HLS but original list gives TS.
-    """
-    try:
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="application/vnd.apple.mpegurl", status=404)
-
-        original = items[channel_id]["url"]
-        candidates = []
-        if ".m3u8" in original.lower():
-            candidates.append(original)
-        candidates.append(make_hls_candidate_url(original))
-        candidates.append(original)
-
-        headers = {
-            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
-            "Accept": "*/*",
-            "Accept-Encoding": "identity",
-            "Connection": "keep-alive",
-        }
-
-        last_error = ""
-        resp = None
-        for cand in candidates:
-            try:
-                r = requests.get(cand, headers=headers, timeout=(3, 5), allow_redirects=True)
-                sample = r.text[:500] if r.text else ""
-                if r.status_code < 400 and "#EXTM3U" in sample:
-                    resp = r
-                    break
-                last_error = f"{cand} -> {r.status_code}"
-            except Exception as e:
-                last_error = f"{cand} -> {e}"
-
-        if resp is None:
-            return Response(f"#EXTM3U\n# ERROR: HLS not available. {last_error}\n", mimetype="application/vnd.apple.mpegurl", status=502)
-
-        base_url = resp.url
-        out = []
-        for line in resp.text.splitlines():
-            s = line.strip()
-            if not s or s.startswith("#"):
-                # Also rewrite URI="key" attributes if present
-                if 'URI="' in line:
-                    def repl_key(m):
-                        key_url = urljoin(base_url, m.group(1))
-                        return 'URI="' + url_for("browser_hls_asset", encoded=b64url_encode_text(key_url)) + '"'
-                    line = re.sub(r'URI="([^"]+)"', repl_key, line)
-                out.append(line)
-            else:
-                abs_url = urljoin(base_url, s)
-                out.append(url_for("browser_hls_asset", encoded=b64url_encode_text(abs_url)))
-        return Response(
-            "\n".join(out) + "\n",
-            mimetype="application/vnd.apple.mpegurl",
-            headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*"}
-        )
-    except Exception as e:
-        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="application/vnd.apple.mpegurl", status=500)
-
-
-@app.route("/browser/hls-asset/<encoded>")
-def browser_hls_asset(encoded):
-    """
-    HLS segment/key proxy.
-    """
-    try:
-        asset_url = b64url_decode_text(encoded)
-        headers = {
-            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
-            "Accept": "*/*",
-            "Accept-Encoding": "identity",
-            "Connection": "keep-alive",
-        }
-        upstream = requests.get(asset_url, headers=headers, stream=True, timeout=(4, None), allow_redirects=True)
-        content_type = upstream.headers.get("Content-Type", "video/mp2t")
-        def generate():
-            try:
-                for chunk in upstream.iter_content(chunk_size=64 * 1024):
-                    if chunk:
-                        yield chunk
-            finally:
-                try:
-                    upstream.close()
-                except Exception:
-                    pass
-        return Response(
-            stream_with_context(generate()),
-            mimetype=content_type,
-            headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*", "X-Accel-Buffering": "no"},
-            direct_passthrough=True,
-        )
-    except Exception as e:
-        return Response(f"HLS asset error: {e}", status=500)
-
-
-@app.route("/proxy/<slug>/<int:channel_id>")
-def proxy_channel(slug, channel_id):
-    """
-    Public proxy stream for VLC playlist.
-    It relays the real provider stream with VLC-friendly headers.
-    """
-    try:
-        text = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(text)
-        if channel_id < 0 or channel_id >= len(items):
-            return Response("Channel not found", status=404)
-
-        stream_url = items[channel_id]["url"]
-        upstream_headers = {
-            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
-            "Accept": "*/*",
-            "Accept-Encoding": "identity",
-            "Connection": "keep-alive",
-            "Icy-MetaData": "0",
-        }
-
-        last_error = None
-        upstream = None
-        for _attempt in range(3):
-            try:
-                upstream = requests.get(
-                    stream_url,
-                    headers=upstream_headers,
-                    stream=True,
-                    timeout=(10, None),
-                    allow_redirects=True,
-                )
-                if upstream.status_code < 500:
-                    break
-            except Exception as e:
-                last_error = e
-                upstream = None
-                time.sleep(0.7)
-
-        if upstream is None:
-            return Response(f"Proxy upstream error: {last_error}", status=502)
-
-        content_type = upstream.headers.get("Content-Type", "video/mp2t")
-        low = content_type.lower()
-        if "text" in low or "html" in low:
-            content_type = "video/mp2t"
-
-        def generate():
-            try:
-                for chunk in upstream.iter_content(chunk_size=64 * 1024):
-                    if chunk:
-                        yield chunk
-            finally:
-                try:
-                    upstream.close()
-                except Exception:
-                    pass
-
-        return Response(
-            stream_with_context(generate()),
-            mimetype=content_type,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-                "Access-Control-Allow-Origin": "*",
-                "X-Accel-Buffering": "no",
-                "Connection": "keep-alive",
-            },
-            direct_passthrough=True,
-        )
-    except Exception as e:
-        return Response(f"Proxy error: {e}", status=500)
 
 
 @app.route("/vlc-list/<slug>.m3u")
@@ -2271,6 +2108,170 @@ def watch_debug():
         return client_page(f"<div class='top'><h2>Debug</h2></div><div class='wrap'><div class='player'>Error: {e}</div></div>")
 
 
+
+@app.route("/browser/remember/<slug>/<int:channel_id>/<method>", methods=["GET", "POST"])
+def browser_remember_method(slug, channel_id, method):
+    if method not in ("hls", "ts", "direct"):
+        method = "ts"
+    remember_channel_method(slug, channel_id, method)
+    return {"ok": True, "method": method}
+
+
+@app.route("/browser/route/<slug>/<int:channel_id>")
+def browser_route(slug, channel_id):
+    try:
+        device = (request.args.get("device") or "").lower()
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return {"ok": False, "error": "channel not found"}, 404
+        url = items[channel_id]["url"]
+        lower = url.lower()
+        remembered = get_remembered_channel_method(slug, channel_id)
+
+        if remembered in ("hls", "ts", "direct"):
+            method = remembered
+        elif ".m3u8" in lower:
+            method = "hls"
+        elif device == "ios":
+            method = "hls"
+        else:
+            method = "ts"
+
+        route_url = url
+        if method == "hls":
+            route_url = f"/browser/hls/{slug}/{channel_id}"
+        elif method == "ts":
+            route_url = f"/proxy/{slug}/{channel_id}"
+
+        return {"ok": True, "method": method, "url": route_url}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+
+
+@app.route("/proxy/<slug>/<int:channel_id>")
+def proxy_channel_fast(slug, channel_id):
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("Channel not found", status=404)
+
+        stream_url = items[channel_id]["url"]
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+            "Icy-MetaData": "0",
+        }
+        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(4, None), allow_redirects=True)
+        content_type = upstream.headers.get("Content-Type", "video/mp2t")
+        if "html" in content_type.lower() or "text" in content_type.lower():
+            content_type = "video/mp2t"
+
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=128 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    upstream.close()
+                except Exception:
+                    pass
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype=content_type,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Access-Control-Allow-Origin": "*",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+            direct_passthrough=True,
+        )
+    except Exception as e:
+        return Response(f"Proxy error: {e}", status=500)
+
+
+@app.route("/browser/hls/<slug>/<int:channel_id>")
+def browser_hls_fast(slug, channel_id):
+    try:
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
+        if channel_id < 0 or channel_id >= len(items):
+            return Response("#EXTM3U\n# ERROR: channel not found\n", mimetype="application/vnd.apple.mpegurl", status=404)
+
+        original = items[channel_id]["url"]
+        candidates = []
+        if ".m3u8" in original.lower():
+            candidates.append(original)
+        guess = make_hls_candidate_url_fast(original)
+        if guess not in candidates:
+            candidates.append(guess)
+
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+        }
+        last_error = ""
+        for cand in candidates:
+            try:
+                r = requests.get(cand, headers=headers, timeout=(2, 4), allow_redirects=True)
+                txt = r.text or ""
+                if r.status_code < 400 and "#EXTM3U" in txt[:800]:
+                    remember_channel_method(slug, channel_id, "hls")
+                    base_url = r.url
+                    lines = []
+                    for line in txt.splitlines():
+                        s = line.strip()
+                        if not s or s.startswith("#"):
+                            lines.append(line)
+                        else:
+                            abs_url = requests.compat.urljoin(base_url, s)
+                            lines.append(url_for("browser_hls_asset_fast", target=requests.utils.quote(abs_url, safe="")))
+                    return Response("\n".join(lines) + "\n", mimetype="application/vnd.apple.mpegurl", headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*"})
+                last_error = f"{cand} -> {r.status_code}"
+            except Exception as e:
+                last_error = str(e)
+
+        return Response(f"#EXTM3U\n# ERROR: no HLS available {last_error}\n", mimetype="application/vnd.apple.mpegurl", status=502)
+    except Exception as e:
+        return Response(f"#EXTM3U\n# ERROR: {e}\n", mimetype="application/vnd.apple.mpegurl", status=500)
+
+
+@app.route("/browser/hls-asset")
+def browser_hls_asset_fast():
+    try:
+        target = requests.utils.unquote(request.args.get("target", ""))
+        headers = {
+            "User-Agent": "VLC/3.0.20 LibVLC/3.0.20 NOXIPTV",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive",
+        }
+        upstream = requests.get(target, headers=headers, stream=True, timeout=(4, None), allow_redirects=True)
+        content_type = upstream.headers.get("Content-Type", "video/mp2t")
+
+        def generate():
+            try:
+                for chunk in upstream.iter_content(chunk_size=128 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    upstream.close()
+                except Exception:
+                    pass
+
+        return Response(stream_with_context(generate()), mimetype=content_type, headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*", "X-Accel-Buffering": "no"}, direct_passthrough=True)
+    except Exception as e:
+        return Response(f"HLS asset error: {e}", status=500)
+
 @app.route("/watch/logout")
 def watch_logout():
     session.pop("client_slug", None)
@@ -2378,7 +2379,7 @@ def watch_home():
             <a class="btn gray vlcbtn" id="openVlcAndroid" href="#"><span class="vlcico">🎥</span><span class="vlcico">🤖</span> VLC Android</a>
             <a class="btn gray" href="/watch/debug">Debug</a>
           </div>
-          <p class="hint" id="hint">Kliko kanal. Browser modern engine aktiv; VLC përdor logjikën funksionale V7.8.4.</p>
+          <p class="hint" id="hint">Kliko kanal. V8 Railway Fast Engine aktiv; VLC logic nuk është prekur.</p>
         </div>
         <div class="grid" id="channels"></div>
       </div>
@@ -2507,46 +2508,44 @@ function updateExternalLinks(url) {{
         stopScreen(n); manualStop[n]=false;
 
         const v=document.getElementById("video"+n);
-        const lower=ch.url.toLowerCase();
         const ua=navigator.userAgent.toLowerCase();
         const isIOS=/iphone|ipad|ipod/.test(ua);
         const isAndroid=/android/.test(ua);
-        const isPC=!isIOS&&!isAndroid;
+        const device=isIOS ? "ios" : (isAndroid ? "android" : "pc");
 
-        v.onplaying=function(){{setBadge(n,"LIVE","on");document.getElementById("hint").innerText="Live në browser.";startWatchdog(n);}};
-        v.onpause=function(){{if(!manualStop[n]&&current[n])setTimeout(()=>{{if(!manualStop[n]&&current[n]&&v.paused){{try{{v.play();}}catch(e){{}}}}}},500);}};
-        v.onended=function(){{if(!manualStop[n]&&current[n])quickRetry(ch,n);}};
-        v.onstalled=function(){{if(!manualStop[n]&&current[n])quickRetry(ch,n);}};
-        v.onerror=function(){{if(!manualStop[n]&&current[n])fastFallback(ch,n,"error");}};
+        v.onplaying=function(){{
+          setBadge(n,"LIVE","on");
+          document.getElementById("hint").innerText="Live në browser.";
+          fetch("/browser/remember/{slug}/"+ch.i+"/"+(v.dataset.method||"ts")).catch(()=>{{}});
+          startWatchdog(n);
+        }};
+        v.onerror=function(){{browserFail(ch,n);}};
+        v.onended=function(){{quickReconnect(ch,n);}};
+        v.onstalled=function(){{quickReconnect(ch,n);}};
 
-        document.getElementById("hint").innerText="Duke hapur shpejt...";
         setBadge(n,"FAST","");
+        document.getElementById("hint").innerText="Railway Fast Engine: duke hapur...";
 
-        // Fast decision:
-        // iPhone: HLS first. Android/PC: TS proxy first.
-        if(lower.includes(".m3u8")) {{
-          playHlsSource(ch.url, ch, n, function(){{ fastFallback(ch,n,"hls_fail"); }}, 2500);
-          return;
-        }}
-
-        if(isIOS) {{
-          // iPhone cannot reliably decode raw MPEG-TS in browser.
-          // Try HLS proxy quickly; if provider has hidden HLS it opens fast.
-          playHlsSource("/browser/hls/{slug}/"+ch.i+"?t="+Date.now(), ch, n, function(){{ 
-            setBadge(n,"VLC","fail");
-            document.getElementById("hint").innerText="Ky kanal nuk ka HLS të luajtshëm për iPhone browser. Përdor VLC.";
-          }}, 3500);
-        }} else {{
-          // Android/PC: fastest is direct MPEGTS proxy with mpegts.js.
-          playMpegts("/proxy/{slug}/"+ch.i+"?t="+Date.now(), n, function(){{ fastFallback(ch,n,"ts_fail"); }});
-        }}
+        fetch("/browser/route/{slug}/"+ch.i+"?device="+device+"&t="+Date.now())
+          .then(r=>r.json())
+          .then(info=>{{
+            if(!info.ok) throw new Error(info.error||"route error");
+            if(info.method==="hls") playHlsFast(info.url+"?t="+Date.now(),ch,n);
+            else if(info.method==="direct") playDirectFast(info.url,ch,n);
+            else playTsFast(info.url+"?t="+Date.now(),ch,n);
+          }})
+          .catch(()=>{{
+            if(isIOS) playHlsFast("/browser/hls/{slug}/"+ch.i+"?t="+Date.now(),ch,n);
+            else playTsFast("/proxy/{slug}/"+ch.i+"?t="+Date.now(),ch,n);
+          }});
       }}
 
-      function playHlsSource(src,ch,n,onFail,failMs=3500) {{
+      function playHlsFast(src,ch,n) {{
         const v=document.getElementById("video"+n);
+        v.dataset.method="hls";
         setBadge(n,"HLS","");
-        let done=false;
-        const failTimer=setTimeout(()=>{{if(!done&&!manualStop[n]&&current[n]){{done=true;if(onFail)onFail();}}}},failMs);
+        let opened=false;
+        const timer=setTimeout(()=>{{if(!opened&&!manualStop[n])browserFail(ch,n);}},2500);
 
         if(Hls.isSupported()) {{
           try {{
@@ -2554,34 +2553,33 @@ function updateExternalLinks(url) {{
             hlsMap[n]=new Hls({{
               lowLatencyMode:true,
               liveSyncDurationCount:2,
-              maxBufferLength:8,
-              backBufferLength:4,
+              maxBufferLength:6,
+              backBufferLength:3,
               enableWorker:true,
-              fragLoadingTimeOut:5000,
-              manifestLoadingTimeOut:3000,
-              levelLoadingTimeOut:3000,
-              startFragPrefetch:true
+              startFragPrefetch:true,
+              manifestLoadingTimeOut:2500,
+              fragLoadingTimeOut:4500,
+              levelLoadingTimeOut:2500
             }});
             hlsMap[n].loadSource(src);
             hlsMap[n].attachMedia(v);
             hlsMap[n].on(Hls.Events.MANIFEST_PARSED,()=>{{
-              v.play().then(()=>{{done=true;clearTimeout(failTimer);}}).catch(()=>{{if(!done){{done=true;clearTimeout(failTimer);if(onFail)onFail();}}}});
+              v.play().then(()=>{{opened=true;clearTimeout(timer);}}).catch(()=>browserFail(ch,n));
             }});
-            hlsMap[n].on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal && !done){{done=true;clearTimeout(failTimer);if(onFail)onFail();}}}});
-          }} catch(e) {{if(!done){{done=true;clearTimeout(failTimer);if(onFail)onFail();}}}}
+            hlsMap[n].on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal)browserFail(ch,n);}});
+          }} catch(e) {{browserFail(ch,n);}}
         }} else if(v.canPlayType("application/vnd.apple.mpegurl")) {{
           v.src=src;
-          v.play().then(()=>{{done=true;clearTimeout(failTimer);}}).catch(()=>{{if(!done){{done=true;clearTimeout(failTimer);if(onFail)onFail();}}}});
-        }} else {{
-          done=true;clearTimeout(failTimer);if(onFail)onFail();
-        }}
+          v.play().then(()=>{{opened=true;clearTimeout(timer);}}).catch(()=>browserFail(ch,n));
+        }} else browserFail(ch,n);
       }}
 
-      function playMpegts(src,n,onFail) {{
+      function playTsFast(src,ch,n) {{
         const v=document.getElementById("video"+n);
+        v.dataset.method="ts";
         setBadge(n,"TS","");
-        let started=false;
-        const failTimer=setTimeout(()=>{{if(!started&&!manualStop[n]&&current[n]){{if(onFail)onFail();}}}},3000);
+        let opened=false;
+        const timer=setTimeout(()=>{{if(!opened&&!manualStop[n])browserFail(ch,n);}},2500);
 
         if(window.mpegts && mpegts.getFeatureList().mseLivePlayback) {{
           try {{
@@ -2592,59 +2590,48 @@ function updateExternalLinks(url) {{
               url:src,
               cors:false,
               enableStashBuffer:false,
-              stashInitialSize:128,
+              stashInitialSize:64,
               lazyLoad:false,
               autoCleanupSourceBuffer:true,
-              autoCleanupMaxBackwardDuration:15,
-              autoCleanupMinBackwardDuration:5,
+              autoCleanupMaxBackwardDuration:10,
+              autoCleanupMinBackwardDuration:3,
               fixAudioTimestampGap:true
             }});
-            tsMap[n].on(mpegts.Events.ERROR,function(){{ if(!manualStop[n]&&current[n]&&onFail) onFail(); }});
+            tsMap[n].on(mpegts.Events.ERROR,function(){{browserFail(ch,n);}});
             tsMap[n].attachMediaElement(v);
             tsMap[n].load();
             tsMap[n].play();
-            v.onplaying=function(){{started=true;clearTimeout(failTimer);setBadge(n,"LIVE","on");document.getElementById("hint").innerText="Live në browser.";startWatchdog(n);}};
-          }} catch(e) {{clearTimeout(failTimer);if(onFail)onFail();}}
-        }} else {{
-          tryDirectVideo(current[n],n,onFail);
-        }}
+            v.onplaying=function(){{
+              opened=true;clearTimeout(timer);
+              setBadge(n,"LIVE","on");
+              document.getElementById("hint").innerText="Live në browser.";
+              fetch("/browser/remember/{slug}/"+ch.i+"/ts").catch(()=>{{}});
+              startWatchdog(n);
+            }};
+          }} catch(e) {{browserFail(ch,n);}}
+        }} else playDirectFast(src,ch,n);
       }}
 
-      function fastFallback(ch,n,reason) {{
-        const ua=navigator.userAgent.toLowerCase();
-        const isIOS=/iphone|ipad|ipod/.test(ua);
-
-        if(isIOS) {{
-          // There is no pure-JS way to play every raw TS channel in iPhone Safari.
-          setBadge(n,"VLC","fail");
-          document.getElementById("hint").innerText="iPhone browser s'e dekodoi këtë kanal. VLC është fallback.";
-          return;
-        }}
-
-        tryDirectVideo(ch,n,function(){{
-          setBadge(n,"VLC","fail");
-          document.getElementById("hint").innerText="Browser nuk e dekodoi këtë kanal. Provo VLC iPhone/Android.";
-        }});
-      }}
-
-      function tryDirectVideo(ch,n,onFail) {{
-        if(!ch || manualStop[n]) return;
+      function playDirectFast(src,ch,n) {{
         const v=document.getElementById("video"+n);
+        v.dataset.method="direct";
         setBadge(n,"DIRECT","");
-        let done=false;
-        const timer=setTimeout(()=>{{if(!done&&!manualStop[n]){{done=true;if(onFail)onFail();}}}},2500);
-        v.src=ch.url;
-        v.play().then(()=>{{done=true;clearTimeout(timer);}}).catch(()=>{{if(!done){{done=true;clearTimeout(timer);if(onFail)onFail();}}}});
+        let opened=false;
+        const timer=setTimeout(()=>{{if(!opened&&!manualStop[n])browserFail(ch,n);}},2200);
+        v.src=src;
+        v.play().then(()=>{{opened=true;clearTimeout(timer);fetch("/browser/remember/{slug}/"+ch.i+"/direct").catch(()=>{{}});}}).catch(()=>browserFail(ch,n));
       }}
 
-      function quickRetry(ch,n) {{
+      function browserFail(ch,n) {{
+        if(manualStop[n]) return;
+        setBadge(n,"VLC","fail");
+        document.getElementById("hint").innerText="Browser nuk e hapi shpejt këtë kanal. Hap me VLC.";
+      }}
+
+      function quickReconnect(ch,n) {{
         reconnects[n]+=1;
-        if(reconnects[n]<=2) {{
-          playBrowser(ch,n,true);
-        }} else {{
-          setBadge(n,"VLC","fail");
-          document.getElementById("hint").innerText="Stream u ndërpre në browser. Provo VLC.";
-        }}
+        if(reconnects[n]<=2) playBrowser(ch,n,true);
+        else browserFail(ch,n);
       }}
 
       function retryCurrent() {{ if(current[target]){{manualStop[target]=false;reconnects[target]=0;playBrowser(current[target],target);}} }}
@@ -2702,7 +2689,7 @@ def watch_stream_proxy(channel_id):
             return Response("Channel not found", status=404)
         stream_url = items[channel_id]["url"]
         headers = {"User-Agent":"VLC/3.0.20 LibVLC/3.0.20","Accept":"*/*","Accept-Encoding":"identity","Connection":"keep-alive"}
-        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(4, None), allow_redirects=True)
+        upstream = requests.get(stream_url, headers=headers, stream=True, timeout=(8, None), allow_redirects=True)
         def generate():
             try:
                 for chunk in upstream.iter_content(chunk_size=32*1024):
