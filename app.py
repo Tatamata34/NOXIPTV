@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V10.1
+NOX IPTV CLOUD PANEL V11.0
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -13,6 +13,7 @@ import base64
 import os
 import re
 import socket
+import secrets
 import subprocess
 import threading
 import shutil
@@ -80,8 +81,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V10.1"
-API_VERSION = "v10.1"
+APP_VERSION = "V11.0"
+API_VERSION = "v11.0"
 
 
 HEADERS = {
@@ -216,6 +217,36 @@ def load_clients():
 def save_clients(clients):
     CLIENTS_FILE.write_text(json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8")
     save_auto_backup()
+
+# ---------------- V11 Client Direct Access Helpers ----------------
+
+def ensure_client_public_token(slug, client=None):
+    """
+    Each client can have a private direct-login link:
+    /c/<slug>/<token>
+    Admin can enable/disable this without changing normal user/pass login.
+    """
+    clients = load_clients()
+    changed = False
+    if client is None:
+        client = clients.get(slug, {})
+    if not client.get("public_token"):
+        client["public_token"] = secrets.token_urlsafe(18)
+        changed = True
+    if "public_enabled" not in client:
+        client["public_enabled"] = False
+        changed = True
+    clients[slug] = client
+    if changed:
+        save_clients(clients)
+    return client.get("public_token")
+
+
+def client_direct_url(slug):
+    token = ensure_client_public_token(slug)
+    return request.url_root.rstrip("/") + url_for("client_direct_login", slug=slug, token=token)
+
+
 
 
 def slugify(text):
@@ -552,6 +583,7 @@ def protect_admin_routes_v101():
         "/browser",
         "/proxy",
         "/api/native",
+        "/c/",
     )
     public_exact = {"/", "/login", "/logout", "/favicon.ico"}
 
@@ -581,6 +613,8 @@ def protect_admin_routes_v101():
         "/duplicate",
         "/toggle",
         "/client",
+        "/client-direct-toggle",
+        "/client-direct-reset",
         "/devices",
     )
 
@@ -721,8 +755,14 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V10.1</title>
+  <title>NOX IPTV V11.0</title>
   <style>
+
+/* V11 responsive overflow fix */
+html, body { max-width:100%; overflow-x:hidden !important; }
+* { box-sizing:border-box; }
+img, video, iframe, table { max-width:100%; }
+
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
     .top { background:linear-gradient(135deg,#0f172a,#1e3a8a); color:white; padding:28px; }
@@ -750,12 +790,25 @@ ADMIN_HTML = """
     .ok { color:var(--green); font-weight:800; }
     .bad { color:var(--red); font-weight:800; }
     pre { background:#0f172a; color:#e5e7eb; padding:15px; border-radius:12px; overflow:auto; }
-  </style>
+  
+/* V11 admin organized menu */
+.admin-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:16px 0}
+.admin-group{background:#0f172a66;border:1px solid #334155;border-radius:18px;padding:12px}
+.admin-group summary{cursor:pointer;font-weight:900;color:#e5e7eb;list-style:none}
+.admin-group summary::-webkit-details-marker{display:none}
+.admin-group .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.admin-searchbar{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.admin-searchbar input,.admin-searchbar select{background:#0b1220;border:1px solid #334155;border-radius:13px;color:white;padding:11px;min-width:210px}
+.client-direct{font-size:12px;background:#0b1220;border:1px solid #334155;border-radius:12px;padding:9px;margin-top:8px;word-break:break-all;color:#cbd5e1}
+.iconbtn{display:inline-flex;align-items:center;gap:6px}
+@media(max-width:800px){.admin-groups{grid-template-columns:1fr}.admin-searchbar input,.admin-searchbar select{width:100%;min-width:0}}
+
+</style>
 </head>
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#8b5cf6;color:white;padding:4px 8px;border-radius:999px;">V10.1</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#14b8a6;color:white;padding:4px 8px;border-radius:999px;">V11.0</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
@@ -794,7 +847,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V10.1</title>
+  <title>NOX IPTV V11.0</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -907,6 +960,93 @@ def test_server_template(server, username="", password=""):
     return out
 
 
+
+
+def client_direct_badge_html(slug, c):
+    token = ensure_client_public_token(slug, c)
+    direct_url = request.url_root.rstrip("/") + url_for("client_direct_login", slug=slug, token=token)
+    enabled = c.get("public_enabled", False)
+    status = "Direct ON" if enabled else "Direct OFF"
+    color = "#16a34a" if enabled else "#64748b"
+    return f"""
+    <div class="client-direct">
+      <b style="color:{color}">{status}</b><br>
+      <span>{direct_url}</span><br>
+      <a class="btn gray" href="/client-direct-toggle/{slug}">{"Disable Direct" if enabled else "Enable Direct"}</a>
+      <a class="btn gray" href="/client-direct-reset/{slug}">Reset Link</a>
+    </div>
+    """
+
+
+def admin_quick_groups_html():
+    return """
+    <div class="admin-searchbar">
+      <input id="adminSearch" placeholder="🔎 Kërko klient, username, server..." oninput="adminFilterRows()">
+      <select id="adminStatus" onchange="adminFilterRows()">
+        <option value="">Të gjithë statuset</option>
+        <option value="enabled">Aktiv</option>
+        <option value="disabled">Disabled</option>
+        <option value="direct">Direct link aktiv</option>
+      </select>
+    </div>
+    <div class="admin-groups">
+      <details class="admin-group" open>
+        <summary>👥 Menaxhimi i klientëve</summary>
+        <div class="row">
+          <a class="btn green iconbtn" href="/add">➕ Add Client</a>
+          <a class="btn gray iconbtn" href="/import-clients">⬆ Import Clients</a>
+          <a class="btn gray iconbtn" href="/export-clients">⬇ Export Clients</a>
+          <a class="btn gray iconbtn" href="/bulk-refresh">🔄 Bulk Refresh</a>
+        </div>
+      </details>
+      <details class="admin-group">
+        <summary>📺 Playlist & Server</summary>
+        <div class="row">
+          <a class="btn iconbtn" href="/template">📋 Master Template</a>
+          <a class="btn gray iconbtn" href="/servers">🌐 Server Templates</a>
+          <a class="btn gray iconbtn" href="/status">📡 Status</a>
+          <a class="btn gray iconbtn" href="/clear-cache">🧹 Clear Cache</a>
+        </div>
+      </details>
+      <details class="admin-group">
+        <summary>📊 Analitika & Logs</summary>
+        <div class="row">
+          <a class="btn gray iconbtn" href="/analytics">📈 Analytics</a>
+          <a class="btn gray iconbtn" href="/logs">🧾 Logs</a>
+        </div>
+      </details>
+      <details class="admin-group">
+        <summary>💾 Backup & Settings</summary>
+        <div class="row">
+          <a class="btn gray iconbtn" href="/backup">💾 Backup All</a>
+          <a class="btn gray iconbtn" href="/auto-backup">⏰ Auto Backup</a>
+          <a class="btn gray iconbtn" href="/restore">♻ Restore</a>
+          <a class="btn gray iconbtn" href="/settings">🎨 Branding/Settings</a>
+        </div>
+      </details>
+    </div>
+    <script>
+      function adminFilterRows(){
+        const q=(document.getElementById('adminSearch')?.value||'').toLowerCase();
+        const st=(document.getElementById('adminStatus')?.value||'').toLowerCase();
+        document.querySelectorAll('[data-client-row]').forEach(row=>{
+          const txt=(row.innerText||'').toLowerCase();
+          let ok=!q || txt.includes(q);
+          if(st==='enabled') ok=ok && txt.includes('enabled');
+          if(st==='disabled') ok=ok && txt.includes('disabled');
+          if(st==='direct') ok=ok && txt.includes('direct on');
+          row.style.display=ok?'':'none';
+        });
+      }
+      document.querySelectorAll('a[href*="/delete"]').forEach(a=>{
+        a.addEventListener('click', e=>{
+          if(!confirm('A je i sigurt që dëshiron ta fshish?')) e.preventDefault();
+        });
+      });
+    </script>
+    """
+
+
 # ---------------- Admin routes ----------------
 
 @app.route("/admin-login", methods=["GET", "POST"])
@@ -919,7 +1059,7 @@ def public_home():
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>NOX IPTV — Premium Streaming Portal</title>
+      <title>NOX IPTV V11.0</title>
       <meta name="theme-color" content="#050816">
       <style>
         *{box-sizing:border-box}
@@ -1039,7 +1179,7 @@ def dashboard():
         mode = c.get("mode", "source_link")
         fav = "★ " if c.get("favorite") else ""
         rows += f"""
-        <tr>
+        <tr data-client-row>
           <td><b>{fav}{c.get('name')}</b><br><span class="small">{slug}</span><br><span class="small">{c.get('client_note','')}</span></td>
           <td><code>{public_url}</code><br><span class="small">VLC portal: <code>{watch_url}</code></span></td>
           <td>{mode}</td>
@@ -1060,7 +1200,7 @@ def dashboard():
         """
     body = f"""
     {stat_html}
-    <div class="card">
+    <div class="card" data-client-row>
       <h2>Clients</h2>
       <p class="small">Use Backup All often on Render Free. Health URL for uptime monitor: <code>{request.url_root.rstrip()}/health</code></p>
       <table>
@@ -2582,19 +2722,19 @@ def watch_home():
       body.light{{--bg:#f8fafc;--panel:#ffffffee;--soft:#f1f5f9;--line:#dbe3ef;--text:#0f172a;--muted:#64748b}}
       body{{background:var(--bg)!important;color:var(--text)!important;font-family:Inter,Arial,sans-serif}}
       .desktopOnly{{display:block}}.mobileOnly{{display:none}}
-      .top{{background:linear-gradient(135deg,#020617,#0f172a,#111827)!important;padding:16px!important;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;backdrop-filter:blur(14px)}}
+      .top{{background:linear-gradient(135deg,#020617,#0f172a,#111827)!important;padding:16px!important;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;backdrop-filter:blur(14px);width:100%;overflow:hidden}}
       .brandrow{{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1360px;margin:auto}}
       .brand{{display:flex;align-items:center;gap:12px}}.brand img{{width:48px;height:48px;border-radius:17px;box-shadow:0 12px 35px #0008}}.brand h2{{margin:0;font-size:24px;font-weight:950}}.vtag{{font-size:11px;background:#8b5cf6;color:white;border-radius:999px;padding:4px 8px;margin-left:7px}}
       .userpill{{font-size:12px;color:#cbd5e1;background:#0f172acc;border:1px solid #334155;border-radius:999px;padding:8px 11px}}.switch{{background:#0f172a;border:1px solid #334155;color:white;border-radius:999px;padding:8px 10px;cursor:pointer}}
-      .toolbar{{max-width:1360px;margin:13px auto 0;display:flex;gap:10px;flex-wrap:wrap}}.toolbar input,.toolbar select{{flex:1;min-width:190px;background:#0b1220;border:1px solid #31405e;border-radius:16px;padding:13px;color:white;outline:none}}
-      .layout{{display:grid;grid-template-columns:255px 1fr;gap:14px;max-width:1360px;margin:auto;padding:14px}}
+      .toolbar{{max-width:1360px;width:100%;margin:13px auto 0;display:flex;gap:10px;flex-wrap:wrap;overflow:hidden}}.toolbar input,.toolbar select{{flex:1;min-width:190px;background:#0b1220;border:1px solid #31405e;border-radius:16px;padding:13px;color:white;outline:none}}
+      .layout{{display:grid;grid-template-columns:minmax(220px,255px) minmax(0,1fr);gap:14px;max-width:1360px;width:100%;margin:auto;padding:14px;overflow:hidden}}
       .side,.hero,.pcbox,.rail{{background:var(--panel);border:1px solid var(--line);border-radius:26px;box-shadow:0 18px 55px #0008}}
       .side{{padding:14px;height:fit-content;position:sticky;top:118px}}.navbtn{{width:100%;display:flex;align-items:center;gap:10px;text-align:left;margin:7px 0;background:#1e293b;border-radius:16px}}.navbtn.active{{background:linear-gradient(135deg,#0ea5e9,#2563eb)}}
       .hero{{padding:17px;margin-bottom:14px;overflow:hidden;position:relative}}.hero h3{{margin:0 0 7px;font-size:24px;font-weight:950}}.hint{{color:var(--muted);font-size:13px;line-height:1.5}}
       .controls{{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}}.btn{{border-radius:14px!important;padding:11px 14px!important;font-weight:850!important}}.onlyfav{{background:linear-gradient(135deg,#f59e0b,#f97316)!important;color:white!important}}
-      .pcbox{{display:none;padding:12px;margin-bottom:14px}}video{{width:100%;height:390px;background:#000;border-radius:22px;display:block}}
+      .pcbox{{display:none;padding:12px;margin-bottom:14px}}video{{width:100%;max-width:100%;height:390px;background:#000;border-radius:22px;display:block}}
       .rail{{padding:13px;margin-bottom:14px}}.railtitle{{display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px}}.railtitle h3{{margin:0;font-size:18px}}.railrow{{display:flex;gap:10px;overflow:auto;padding-bottom:4px}}
-      .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:11px}}.ch,.railcard{{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:13px;cursor:pointer;min-height:92px;transition:.14s;position:relative;overflow:hidden}}.railcard{{min-width:220px}}.ch:hover,.railcard:hover{{border-color:#38bdf8;transform:translateY(-2px)}}.selected{{border-color:#0ea5e9!important;box-shadow:0 0 0 1px #0ea5e9aa}}
+      .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(248px,100%),1fr));gap:11px;min-width:0;overflow:hidden}}.ch,.railcard{{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:13px;cursor:pointer;min-height:92px;transition:.14s;position:relative;overflow:hidden}}.railcard{{min-width:220px}}.ch:hover,.railcard:hover{{border-color:#38bdf8;transform:translateY(-2px)}}.selected{{border-color:#0ea5e9!important;box-shadow:0 0 0 1px #0ea5e9aa}}
       .logo{{width:48px;height:48px;object-fit:contain;float:left;margin-right:12px;background:#ffffff12;border-radius:15px}}.name{{font-size:15px;font-weight:950;line-height:1.25}}.group{{clear:both;color:var(--muted);font-size:12px;margin-top:9px}}.live{{position:absolute;right:10px;bottom:10px;background:#16a34a;color:white;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900}}
       .bottomnav{{display:none}}
       @media(max-width:900px){{
@@ -3020,3 +3160,58 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port)
+@app.route("/c/<slug>/<token>")
+def client_direct_login(slug, token):
+    """
+    Direct client login link. Works only if enabled in admin.
+    Normal /watch user/pass login continues to work.
+    """
+    clients = load_clients()
+    c = clients.get(slug)
+    if not c:
+        return redirect("/watch")
+    if not c.get("enabled", True) or not c.get("allow_watch", True):
+        return redirect("/watch")
+    if not c.get("public_enabled", False):
+        return redirect("/watch")
+    if not c.get("public_token") or c.get("public_token") != token:
+        return redirect("/watch")
+    session["client_slug"] = slug
+    try:
+        log_event(slug, "direct_login", "Direct client link login")
+    except Exception:
+        pass
+    return redirect("/watch/home")
+
+
+@app.route("/client-direct-toggle/<slug>", methods=["POST", "GET"])
+def client_direct_toggle(slug):
+    if not login_required():
+        return redirect("/login")
+    clients = load_clients()
+    c = clients.get(slug)
+    if not c:
+        return redirect("/dashboard")
+    ensure_client_public_token(slug, c)
+    c["public_enabled"] = not c.get("public_enabled", False)
+    clients[slug] = c
+    save_clients(clients)
+    return redirect("/dashboard")
+
+
+@app.route("/client-direct-reset/<slug>", methods=["POST", "GET"])
+def client_direct_reset(slug):
+    if not login_required():
+        return redirect("/login")
+    clients = load_clients()
+    c = clients.get(slug)
+    if not c:
+        return redirect("/dashboard")
+    c["public_token"] = secrets.token_urlsafe(18)
+    c["public_enabled"] = True
+    clients[slug] = c
+    save_clients(clients)
+    return redirect("/dashboard")
+
+
+
