@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-NOX IPTV CLOUD PANEL V10.0
+NOX IPTV CLOUD PANEL V10.1
 Admin panel + Master Template + Backup/Restore + Client Portal direct VLC + Native Android API.
 
 Use only with playlists/streams you are authorized to manage.
@@ -80,8 +80,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
-APP_VERSION = "V10.0"
-API_VERSION = "v10.0"
+APP_VERSION = "V10.1"
+API_VERSION = "v10.1"
 
 
 HEADERS = {
@@ -531,6 +531,66 @@ def login_required():
 def client_login_required():
     return bool(session.get("client_slug"))
 
+# ---------------- V10.1 Admin Route Protection ----------------
+
+@app.before_request
+def protect_admin_routes_v101():
+    """
+    Public routes stay public. Admin routes are blocked unless logged in.
+    This fixes direct browsing of admin pages without password.
+    """
+    path = request.path or "/"
+
+    public_prefixes = (
+        "/static",
+        "/watch",
+        "/manifest",
+        "/service-worker",
+        "/p/",
+        "/playlist",
+        "/vlc-list",
+        "/browser",
+        "/proxy",
+        "/api/native",
+    )
+    public_exact = {"/", "/login", "/logout", "/favicon.ico"}
+
+    if path in public_exact or path.startswith(public_prefixes):
+        return None
+
+    admin_prefixes = (
+        "/dashboard",
+        "/template",
+        "/add",
+        "/edit",
+        "/delete",
+        "/refresh",
+        "/status",
+        "/servers",
+        "/logs",
+        "/analytics",
+        "/settings",
+        "/bulk-refresh",
+        "/clear-cache",
+        "/backup",
+        "/auto-backup",
+        "/github-sync",
+        "/restore",
+        "/import",
+        "/export",
+        "/duplicate",
+        "/toggle",
+        "/client",
+        "/devices",
+    )
+
+    if path.startswith(admin_prefixes) and not login_required():
+        return redirect("/login")
+
+    return None
+
+
+
 
 
 
@@ -661,7 +721,7 @@ ADMIN_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V10.0</title>
+  <title>NOX IPTV V10.1</title>
   <style>
     :root { --bg:#0f172a; --text:#0f172a; --muted:#64748b; --brand:#2563eb; --green:#16a34a; --red:#dc2626; }
     body { font-family: Inter, Arial, sans-serif; margin:0; background:#f1f5f9; color:var(--text); }
@@ -695,11 +755,11 @@ ADMIN_HTML = """
 <body>
   <div class="top">
     <div class="wrap">
-      <h1>NOX IPTV Panel <span style="font-size:13px;background:#8b5cf6;color:white;padding:4px 8px;border-radius:999px;">V10.0</span></h1>
+      <h1>NOX IPTV Panel <span style="font-size:13px;background:#8b5cf6;color:white;padding:4px 8px;border-radius:999px;">V10.1</span></h1>
       <p>Admin panel, Master Template, Backup/Restore, Client VLC portal, Native App API.</p>
       {% if logged %}
       <div class="nav">
-        <a class="btn" href="/">Dashboard</a>
+        <a class="btn" href="/dashboard">Dashboard</a>
         <a class="btn" href="/template">Master Template</a>
         <a class="btn green" href="/add">Add Client</a>
         <a class="btn gray" href="/status">Status</a>
@@ -734,7 +794,7 @@ CLIENT_HTML = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NOX IPTV V10.0</title>
+  <title>NOX IPTV V10.1</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mux.js@latest/dist/mux.min.js"></script>
@@ -850,13 +910,86 @@ def test_server_template(server, username="", password=""):
 # ---------------- Admin routes ----------------
 
 @app.route("/admin-login", methods=["GET", "POST"])
+
+@app.route("/")
+def public_home():
+    return """
+    <!doctype html>
+    <html lang="sq">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>NOX IPTV — Premium Streaming Portal</title>
+      <meta name="theme-color" content="#050816">
+      <style>
+        *{box-sizing:border-box}
+        body{margin:0;min-height:100vh;font-family:Inter,Arial,sans-serif;background:#050816;color:#f8fafc;overflow-x:hidden}
+        body:before{content:"";position:fixed;inset:-20%;background:
+          radial-gradient(circle at 16% 18%,#0ea5e966,transparent 28%),
+          radial-gradient(circle at 78% 12%,#8b5cf666,transparent 30%),
+          radial-gradient(circle at 48% 92%,#22c55e44,transparent 32%);filter:blur(35px);z-index:-2;animation:bg 10s ease-in-out infinite alternate}
+        body:after{content:"";position:fixed;inset:0;background:linear-gradient(180deg,#050816aa,#050816 75%);z-index:-1}
+        @keyframes bg{from{transform:scale(1)}to{transform:scale(1.06) translateY(-18px)}}
+        .nav{max-width:1180px;margin:auto;padding:22px;display:flex;justify-content:space-between;align-items:center}
+        .logo{display:flex;align-items:center;gap:12px;font-weight:1000;font-size:25px;letter-spacing:-.4px}.logo img{width:52px;height:52px;border-radius:18px;box-shadow:0 14px 42px #0009}
+        .pill{border:1px solid #334155;background:#0f172acc;border-radius:999px;padding:10px 14px;color:#cbd5e1;text-decoration:none;font-size:13px}
+        .hero{max-width:1180px;margin:36px auto 0;padding:22px;display:grid;grid-template-columns:1.08fr .92fr;gap:34px;align-items:center}
+        h1{font-size:clamp(44px,7vw,88px);line-height:.9;margin:0;font-weight:1000;letter-spacing:-3px}
+        h1 span{background:linear-gradient(90deg,#38bdf8,#a78bfa,#22c55e);-webkit-background-clip:text;color:transparent}
+        .lead{font-size:19px;color:#b8c5d7;line-height:1.7;max-width:690px;margin:24px 0}
+        .actions{display:flex;gap:16px;flex-wrap:wrap;margin-top:30px}
+        .bigbtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-width:245px;padding:20px 28px;border-radius:25px;text-decoration:none;font-weight:1000;font-size:18px;box-shadow:0 18px 48px #0009;transition:.16s}
+        .bigbtn:hover{transform:translateY(-3px);filter:brightness(1.08)}
+        .client{background:linear-gradient(135deg,#0ea5e9,#2563eb,#7c3aed);color:white}.admin{background:#0f172acc;border:1px solid #334155;color:#f8fafc}
+        .showcase{background:linear-gradient(180deg,#0f172a,#020617);border:1px solid #26324a;border-radius:38px;padding:18px;box-shadow:0 35px 90px #000c;position:relative;overflow:hidden}
+        .screen{height:330px;border-radius:28px;background:linear-gradient(135deg,#111827,#020617);border:1px solid #334155;display:flex;align-items:center;justify-content:center;position:relative}
+        .screen:after{content:"LIVE";position:absolute;right:18px;top:18px;background:#22c55e;color:white;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:900}
+        .play{width:94px;height:94px;border-radius:32px;background:#ffffff18;display:flex;align-items:center;justify-content:center}.play:after{content:"";border-left:31px solid white;border-top:20px solid transparent;border-bottom:20px solid transparent;margin-left:8px}
+        .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}.tile{background:#111827;border:1px solid #26324a;border-radius:22px;padding:15px}.tile span{font-size:12px;color:#94a3b8}
+        .features{max-width:1180px;margin:44px auto;padding:22px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.feature{background:#0f172acc;border:1px solid #26324a;border-radius:26px;padding:20px;transition:.16s}.feature:hover{transform:translateY(-3px);border-color:#38bdf8}.feature h3{margin:0 0 9px}.feature p{margin:0;color:#94a3b8;line-height:1.55}
+        footer{max-width:1180px;margin:auto;padding:26px 22px 45px;color:#64748b;font-size:13px}
+        @media(max-width:900px){.hero{grid-template-columns:1fr;margin-top:12px}.features{grid-template-columns:1fr}.tiles{grid-template-columns:1fr}.actions .bigbtn{width:100%}.screen{height:220px}.pill{display:none}h1{letter-spacing:-1.5px}}
+      </style>
+    </head>
+    <body>
+      <nav class="nav"><div class="logo"><img src="/static/nox_logo.svg" onerror="this.style.display='none'"><span>NOX IPTV</span></div><a class="pill" href="/watch">Client Portal</a></nav>
+      <section class="hero">
+        <div>
+          <h1>Premium IPTV <span>experience</span> për çdo pajisje.</h1>
+          <p class="lead">Platformë moderne për klientët e tu: hyrje e mbrojtur, kategori të pastra, favorite, PC browser mode dhe hapje direkte në VLC për iPhone/Android.</p>
+          <div class="actions">
+            <a class="bigbtn client" href="/watch">▶ KYQU SI KLIENT</a>
+            <a class="bigbtn admin" href="/login">⚙ ADMIN</a>
+          </div>
+        </div>
+        <div class="showcase">
+          <div class="screen"><div class="play"></div></div>
+          <div class="tiles">
+            <div class="tile"><b>Sport</b><br><span>ART, Super Sport, Tring</span></div>
+            <div class="tile"><b>Favorites</b><br><span>Kanalet e preferuara</span></div>
+            <div class="tile"><b>PC Mode</b><br><span>Shikim nga browseri</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="features">
+        <div class="feature"><h3>⚡ Fast access</h3><p>Navigim i shpejtë dhe hapje direkte në app.</p></div>
+        <div class="feature"><h3>📱 Mobile first</h3><p>Dizajn i veçantë për telefon, jo desktop i zvogëluar.</p></div>
+        <div class="feature"><h3>💻 PC mode</h3><p>Desktop shikon direkt në browser.</p></div>
+        <div class="feature"><h3>🔐 Private</h3><p>Admin panel i mbrojtur me password.</p></div>
+      </section>
+      <footer>© NOX IPTV — premium private IPTV portal.</footer>
+    </body>
+    </html>
+    """
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
     if request.method == "POST":
         if request.form.get("password") == ADMIN_PASSWORD:
             session["logged_in"] = True
-            return redirect("/")
+            return redirect("/dashboard")
         error = "Password gabim."
     body = f"""
     <div class="card" style="max-width:480px;margin:50px auto;">
@@ -879,17 +1012,6 @@ def logout():
 
 
 
-@app.route("/")
-def public_home():
-    return """
-<!doctype html><html lang="sq"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NOX IPTV</title>
-<style>
-*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:#050816;color:#f8fafc;min-height:100vh;overflow-x:hidden}body:before{content:"";position:fixed;inset:-25%;background:radial-gradient(circle at 15% 20%,#0ea5e966,transparent 28%),radial-gradient(circle at 85% 10%,#8b5cf666,transparent 28%),radial-gradient(circle at 50% 90%,#22c55e44,transparent 32%);filter:blur(40px);z-index:-1}.nav{max-width:1180px;margin:auto;padding:22px;display:flex;align-items:center;justify-content:space-between}.logo{display:flex;align-items:center;gap:12px;font-weight:950;font-size:25px}.logo img{width:52px;height:52px;border-radius:18px}.pill{border:1px solid #334155;background:#0f172acc;border-radius:999px;padding:9px 13px;color:#cbd5e1}.hero{max-width:1180px;margin:45px auto 0;padding:22px;display:grid;grid-template-columns:1.1fr .9fr;gap:32px;align-items:center}h1{font-size:clamp(44px,7vw,86px);line-height:.9;margin:0;font-weight:1000;letter-spacing:-3px}h1 span{background:linear-gradient(90deg,#38bdf8,#a78bfa,#22c55e);-webkit-background-clip:text;color:transparent}.lead{font-size:19px;line-height:1.65;color:#b8c5d7;max-width:700px;margin:24px 0}.actions{display:flex;gap:15px;flex-wrap:wrap;margin-top:30px}.big{min-width:245px;padding:20px 26px;border-radius:24px;text-decoration:none;font-weight:950;font-size:18px;text-align:center;box-shadow:0 18px 50px #0009;transition:.16s}.big:hover{transform:translateY(-3px);filter:brightness(1.08)}.client{background:linear-gradient(135deg,#0ea5e9,#2563eb,#8b5cf6);color:white}.admin{background:#0f172acc;border:1px solid #334155;color:white}.show{background:linear-gradient(180deg,#0f172a,#020617);border:1px solid #26324a;border-radius:38px;padding:18px;box-shadow:0 35px 90px #000c}.screen{height:330px;border-radius:28px;background:linear-gradient(135deg,#111827,#020617);border:1px solid #334155;display:flex;align-items:center;justify-content:center;position:relative}.screen:after{content:"LIVE";position:absolute;right:18px;top:18px;background:#22c55e;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:900}.play{width:92px;height:92px;border-radius:32px;background:#ffffff18;display:flex;align-items:center;justify-content:center}.play:after{content:"";border-left:31px solid white;border-top:20px solid transparent;border-bottom:20px solid transparent;margin-left:8px}.features{max-width:1180px;margin:44px auto;padding:22px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.f{background:#0f172acc;border:1px solid #26324a;border-radius:26px;padding:20px}.f p{color:#94a3b8;line-height:1.55}footer{max-width:1180px;margin:auto;padding:25px 22px 45px;color:#64748b}@media(max-width:850px){.hero,.features{grid-template-columns:1fr}.big{width:100%}.screen{height:230px}}
-</style></head><body>
-<nav class="nav"><div class="logo"><img src="/static/nox_logo.svg" onerror="this.style.display='none'"><span>NOX IPTV</span></div><div class="pill">Premium IPTV Portal</div></nav>
-<section class="hero"><div><h1>Premium IPTV <span>experience</span> për çdo pajisje.</h1><p class="lead">Platformë moderne private për klientët: hyrje e mbrojtur, kategori të pastra, favorite, recent, PC mode dhe hapje direkte në app për iPhone/Android.</p><div class="actions"><a class="big client" href="/watch">▶ KYQU SI KLIENT</a><a class="big admin" href="/login">⚙ ADMIN</a></div></div><div class="show"><div class="screen"><div class="play"></div></div></div></section>
-<section class="features"><div class="f"><h3>⚡ Fast</h3><p>Hapje e shpejtë dhe UI i pastër.</p></div><div class="f"><h3>📱 Mobile</h3><p>iPhone/Android hapin app-in direkt.</p></div><div class="f"><h3>💻 PC Mode</h3><p>Shikim në browser për kompjuter.</p></div><div class="f"><h3>⭐ Favorites</h3><p>Kanale të preferuara dhe recent.</p></div></section><footer>© NOX IPTV — private streaming portal</footer>
-</body></html>"""
 
 @app.route("/dashboard")
 def dashboard():
@@ -2413,32 +2535,184 @@ def watch_logout():
 def watch_home():
     if not client_login_required():
         return redirect("/watch")
-    slug=session["client_slug"]
-    clients=load_clients(); c=clients.get(slug)
+
+    slug = session["client_slug"]
+    clients = load_clients()
+    c = clients.get(slug)
     if not c or not c.get("allow_watch", True) or not c.get("enabled", True):
         return redirect("/watch/logout")
+
     try:
-        text=get_playlist_for_client(slug, force_refresh=False); items=parse_m3u_items(text)
+        text = get_playlist_for_client(slug, force_refresh=False)
+        items = parse_m3u_items(text)
     except Exception as e:
         return client_page(f"<div class='top'><h2>NOX IPTV</h2></div><div class='wrap'><div class='player'><p>Problem: {e}</p></div></div>")
-    sport_order=["AL| ART SPORT 1 FHD","AL| ART SPORT 2 FHD","AL| ART SPORT 3 FHD","AL| ART SPORT 4 FHD","AL| ART SPORT 5 FHD","AL| ART SPORT 6 FHD","AL| SUPER SPORT 1 FHD","AL| SUPER SPORT 2 FHD","AL| SUPER SPORT 3 FHD","AL| SUPER SPORT 4 FHD","AL| SUPER SPORT 5 FHD","AL| SUPER SPORT 6 FHD","AL| TRING SPORT 1 FHD","AL| TRING SPORT 2 FHD","AL| TRING SPORT 3 FHD","AL| TRING SPORT 4 FHD","AL| KUJTESA SPORT 1 HD","AL| KUJTESA SPORT 2 HD","AL| KUJTESA SPORT 3 HD","AL| KUJTESA SPORT 4 HD","AL| KUJTESA SPORT 5 HD","AL| EUROSPORT 1 HD","AL| EUROSPORT 2 HD","AL| Fight Box HD"]
-    sport_rank={n.upper():i for i,n in enumerate(sport_order)}; sport_keys=["SPORT","SUPER SPORT","TRING","KUJTESA","EUROSPORT","ART SPORT","FIGHT"]
-    safe=[]
-    for idx,it in enumerate(items):
-        txt=(it['name']+' '+it['group']).upper(); sport=any(k in txt for k in sport_keys); name_up=it['name'].upper().strip()
-        safe.append({'i':idx,'name':it['name'],'group':'Sport' if sport else it['group'],'raw_group':it['group'],'logo':it['logo'],'url':it['url'],'sport_rank':sport_rank.get(name_up,9999)})
-    data_json=json.dumps(safe, ensure_ascii=False)
-    brand=get_settings().get('brand_name','NOX IPTV') if 'get_settings' in globals() else 'NOX IPTV'
-    body=f'''
-<style>
-:root{{--bg:#050816;--panel:#0b1220e6;--line:#26324a;--text:#f8fafc;--muted:#94a3b8;--blue:#0ea5e9;--violet:#8b5cf6}}body.light{{--bg:#f8fafc;--panel:#ffffffee;--line:#dbe3ef;--text:#0f172a;--muted:#64748b}}body{{background:var(--bg)!important;color:var(--text)!important;font-family:Inter,Arial,sans-serif}}.top{{background:linear-gradient(135deg,#020617,#0f172a,#111827)!important;padding:16px!important;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}}.brandrow{{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1360px;margin:auto}}.brand{{display:flex;align-items:center;gap:12px}}.brand img{{width:48px;height:48px;border-radius:17px}}.brand h2{{margin:0;font-size:24px;font-weight:950}}.vtag{{font-size:11px;background:#8b5cf6;color:white;border-radius:999px;padding:4px 8px;margin-left:7px}}.hint{{color:var(--muted);font-size:13px;line-height:1.5}}.toolbar{{max-width:1360px;margin:13px auto 0;display:flex;gap:10px;flex-wrap:wrap}}.toolbar input,.toolbar select{{flex:1;min-width:190px;background:#0b1220;border:1px solid #31405e;border-radius:16px;padding:13px;color:white}}.layout{{display:grid;grid-template-columns:255px 1fr;gap:14px;max-width:1360px;margin:auto;padding:14px}}.side,.hero,.pcbox,.rail,.ch{{background:var(--panel);border:1px solid var(--line);border-radius:26px;box-shadow:0 18px 55px #0008}}.side{{padding:14px;height:fit-content;position:sticky;top:118px}}.navbtn{{width:100%;display:flex;gap:10px;text-align:left;margin:7px 0;background:#1e293b;border-radius:16px}}.navbtn.active{{background:linear-gradient(135deg,#0ea5e9,#2563eb)}}.hero{{padding:17px;margin-bottom:14px}}.hero h3{{margin:0 0 7px;font-size:24px;font-weight:950}}.controls{{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}}.btn{{border-radius:14px!important;padding:11px 14px!important;font-weight:850!important}}.onlyfav{{background:linear-gradient(135deg,#f59e0b,#f97316)!important;color:white!important}}.pcbox{{display:none;padding:12px;margin-bottom:14px}}video{{width:100%;height:390px;background:#000;border-radius:22px;display:block}}.rail{{padding:13px;margin-bottom:14px}}.railtitle{{display:flex;justify-content:space-between;margin:4px 0 10px}}.railrow{{display:flex;gap:10px;overflow:auto;padding-bottom:4px}}.railcard{{min-width:220px;background:#0f172a;border:1px solid #26324a;border-radius:20px;padding:12px;cursor:pointer}}.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:11px}}.ch{{padding:13px;cursor:pointer;min-height:92px;transition:.14s;box-shadow:none;position:relative;overflow:hidden}}.ch:hover,.railcard:hover{{border-color:#38bdf8;transform:translateY(-2px)}}.selected{{border-color:#0ea5e9!important;box-shadow:0 0 0 1px #0ea5e9aa}}.logo{{width:48px;height:48px;object-fit:contain;float:left;margin-right:12px;background:#ffffff12;border-radius:15px}}.name{{font-size:15px;font-weight:950;line-height:1.25}}.group{{clear:both;color:var(--muted);font-size:12px;margin-top:9px}}.live{{position:absolute;right:10px;bottom:10px;background:#16a34a;color:white;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900}}.switch{{background:#0f172a;border:1px solid #334155;color:white;border-radius:999px;padding:8px 10px;cursor:pointer}}@media(max-width:900px){{.layout{{grid-template-columns:1fr;padding:10px;padding-bottom:70px}}.side{{position:relative;top:0;display:grid;grid-template-columns:1fr 1fr;gap:7px}}.navbtn{{margin:0}}video{{height:230px}}}}
-</style><script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script><script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
-<div class="top"><div class="brandrow"><div class="brand"><img src="/static/nox_logo.svg" onerror="this.style.display='none'"><div><h2>{brand}<span class="vtag">V10</span></h2><div class="hint">{c.get('name', slug)}</div></div></div><div style="display:flex;gap:8px;align-items:center"><button class="switch" onclick="toggleTheme()">🌙/☀️</button><a class="btn red" href="/watch/logout">Logout</a></div></div><div class="toolbar"><input id="search" placeholder="Kërko kanal..."><select id="group"><option value="">Të gjitha</option><option value="__fav">⭐ Favorites</option><option value="__recent">🕘 Recent</option><option value="Sport">Sport</option></select></div></div>
-<div class="layout"><aside class="side"><button class="btn navbtn active" onclick="setGroup('',this)">🏠 Home</button><button class="btn navbtn" onclick="setGroup('__fav',this)">⭐ Favorites</button><button class="btn navbtn" onclick="setGroup('__recent',this)">🕘 Recent</button><button class="btn navbtn" onclick="setGroup('Sport',this)">🏆 Sport</button><button class="btn navbtn" onclick="setMode('pc')">💻 PC Mode</button><button class="btn navbtn" onclick="setMode('auto')">📱 Mobile App</button></aside><main><section class="hero"><h3 id="now">Zgjedh një kanal</h3><div class="hint" id="hint">Në telefon hapet direkt në app. Për PC zgjidh PC Mode.</div><div class="controls"><button class="btn onlyfav" onclick="toggleFavorite()">⭐ Favorite</button></div></section><section class="pcbox" id="pcbox"><video id="pcvideo" controls playsinline></video><div class="hint" id="pchint">PC Browser player aktiv.</div></section><section class="rail"><div class="railtitle"><h3>Continue Watching</h3><span class="hint">Kanalet e fundit</span></div><div class="railrow" id="continueRail"></div></section><section class="rail"><div class="railtitle"><h3>Recommended for you</h3><span class="hint">Sport & favorites</span></div><div class="railrow" id="recommendRail"></div></section><div class="grid" id="channels"></div></main></div>
-<script>
-const channels={data_json};let currentChannel=null,mode=localStorage.getItem('nox_mode_{slug}')||'auto',hls=null,ts=null;const favKey='nox_fav_{slug}',recKey='nox_rec_{slug}',themeKey='nox_theme';function favs(){{return JSON.parse(localStorage.getItem(favKey)||'[]')}}function setFavs(v){{localStorage.setItem(favKey,JSON.stringify(v))}}function recents(){{return JSON.parse(localStorage.getItem(recKey)||'[]')}}function setRec(v){{localStorage.setItem(recKey,JSON.stringify(v.slice(0,50)))}}function isIOS(){{return /iphone|ipad|ipod/i.test(navigator.userAgent)}}function isAndroid(){{return /android/i.test(navigator.userAgent)}}if(localStorage.getItem(themeKey)==='light')document.body.classList.add('light');function toggleTheme(){{document.body.classList.toggle('light');localStorage.setItem(themeKey,document.body.classList.contains('light')?'light':'dark')}}function setMode(m){{mode=m;localStorage.setItem('nox_mode_{slug}',m);document.getElementById('pcbox').style.display=m==='pc'?'block':'none';document.getElementById('hint').innerText=m==='pc'?'PC Mode aktiv: kanalet hapen në browser.':'Mobile App aktiv: kanalet hapen direkt në app.';if(currentChannel&&m==='pc')playPc(currentChannel)}}function appLinks(url){{const clean=url.replace(/^https?:\/\//,'');const scheme=url.startsWith('https://')?'https':'http';return {{iphone:'vlc-x-callback://x-callback-url/stream?url='+encodeURIComponent(url),android:'intent://'+clean+'#Intent;scheme='+scheme+';package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end',direct:url}}}}function selectChannel(ch){{currentChannel=ch;let r=recents().filter(x=>x!==ch.i);r.unshift(ch.i);setRec(r);document.getElementById('now').innerText=ch.name+' — '+(ch.raw_group||ch.group);document.querySelectorAll('.ch,.railcard').forEach(x=>x.classList.remove('selected'));document.querySelectorAll(`[data-i="${{ch.i}}"]`).forEach(x=>x.classList.add('selected'));renderRails();if(mode==='pc')return playPc(ch);const l=appLinks(ch.url);if(isIOS())window.location.href=l.iphone;else if(isAndroid())window.location.href=l.android;else window.location.href=l.direct}}function stopPc(){{const v=document.getElementById('pcvideo');if(hls){{try{{hls.destroy()}}catch(e){{}}hls=null}}if(ts){{try{{ts.pause();ts.unload();ts.detachMediaElement();ts.destroy()}}catch(e){{}}ts=null}}try{{v.pause()}}catch(e){{}}v.removeAttribute('src');v.load()}}function playPc(ch){{document.getElementById('pcbox').style.display='block';stopPc();const v=document.getElementById('pcvideo');document.getElementById('pchint').innerText='Duke hapur në PC Browser...';if(ch.url.toLowerCase().includes('.m3u8'))return playHls(ch.url);if(window.mpegts&&mpegts.getFeatureList().mseLivePlayback){{try{{ts=mpegts.createPlayer({{type:'mpegts',isLive:true,url:'/proxy/{slug}/'+ch.i,cors:false,enableStashBuffer:false,stashInitialSize:128,lazyLoad:false}});ts.on(mpegts.Events.ERROR,()=>playHls('/browser/ffmpeg/{slug}/'+ch.i+'/index.m3u8?mode=copy&t='+Date.now()));ts.attachMediaElement(v);ts.load();ts.play();v.onplaying=()=>document.getElementById('pchint').innerText='Live në PC Browser.'}}catch(e){{playHls('/browser/ffmpeg/{slug}/'+ch.i+'/index.m3u8?mode=copy&t='+Date.now())}}}}else playHls('/browser/ffmpeg/{slug}/'+ch.i+'/index.m3u8?mode=copy&t='+Date.now())}}function playHls(src){{const v=document.getElementById('pcvideo');if(Hls.isSupported()){{hls=new Hls({{lowLatencyMode:true,liveSyncDurationCount:2,maxBufferLength:10,backBufferLength:4}});hls.loadSource(src);hls.attachMedia(v);hls.on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>document.getElementById('pchint').innerText='Nuk u hap në browser.'));}}else{{v.src=src;v.play().catch(()=>document.getElementById('pchint').innerText='Nuk u hap në browser.')}}v.onplaying=()=>document.getElementById('pchint').innerText='Live në PC Browser.'}}function setGroup(g,el){{document.getElementById('group').value=g;document.querySelectorAll('.navbtn').forEach(x=>x.classList.remove('active'));if(el)el.classList.add('active');render()}}function toggleFavorite(){{if(!currentChannel)return;let f=favs();if(f.includes(currentChannel.i))f=f.filter(x=>x!==currentChannel.i);else f.push(currentChannel.i);setFavs(f);render();renderRails()}}function cardHtml(ch){{const f=favs();return `${{ch.logo?`<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">`:''}}<div class="name">${{f.includes(ch.i)?'⭐ ':''}}${{ch.name}}</div><div class="group">${{ch.group}} · ${{ch.raw_group||''}}</div><span class="live">LIVE</span>`}}function filtered(){{const q=document.getElementById('search').value.toLowerCase(),g=document.getElementById('group').value,f=favs(),r=recents();let list=channels.filter(ch=>{{let ok=!g||ch.group===g||ch.raw_group===g;if(g==='__fav')ok=f.includes(ch.i);if(g==='__recent')ok=r.includes(ch.i);return ok&&(!q||ch.name.toLowerCase().includes(q));}});if(g==='Sport')list=list.slice().sort((a,b)=>(a.sport_rank-b.sport_rank)||a.name.localeCompare(b.name));return list}}function renderRails(){{const cont=document.getElementById('continueRail');cont.innerHTML='';recents().slice(0,10).map(i=>channels.find(c=>c.i===i)).filter(Boolean).forEach(ch=>{{const d=document.createElement('div');d.className='railcard';d.dataset.i=ch.i;d.onclick=()=>selectChannel(ch);d.innerHTML=cardHtml(ch);cont.appendChild(d)}});const rec=document.getElementById('recommendRail');rec.innerHTML='';let base=channels.filter(ch=>ch.group==='Sport').sort((a,b)=>(a.sport_rank-b.sport_rank)||a.name.localeCompare(b.name)).slice(0,10);base.forEach(ch=>{{const d=document.createElement('div');d.className='railcard';d.dataset.i=ch.i;d.onclick=()=>selectChannel(ch);d.innerHTML=cardHtml(ch);rec.appendChild(d)}})}}function render(){{const box=document.getElementById('channels');box.innerHTML='';filtered().slice(0,1200).forEach(ch=>{{const d=document.createElement('div');d.className='ch';d.dataset.i=ch.i;d.onclick=()=>selectChannel(ch);d.innerHTML=cardHtml(ch);box.appendChild(d)}});renderRails()}}document.getElementById('search').addEventListener('input',render);document.getElementById('group').addEventListener('change',render);setMode(mode);render();
-</script>
-'''
+
+    sport_order = [
+        "AL| ART SPORT 1 FHD","AL| ART SPORT 2 FHD","AL| ART SPORT 3 FHD","AL| ART SPORT 4 FHD","AL| ART SPORT 5 FHD","AL| ART SPORT 6 FHD",
+        "AL| SUPER SPORT 1 FHD","AL| SUPER SPORT 2 FHD","AL| SUPER SPORT 3 FHD","AL| SUPER SPORT 4 FHD","AL| SUPER SPORT 5 FHD","AL| SUPER SPORT 6 FHD",
+        "AL| TRING SPORT 1 FHD","AL| TRING SPORT 2 FHD","AL| TRING SPORT 3 FHD","AL| TRING SPORT 4 FHD",
+        "AL| KUJTESA SPORT 1 HD","AL| KUJTESA SPORT 2 HD","AL| KUJTESA SPORT 3 HD","AL| KUJTESA SPORT 4 HD","AL| KUJTESA SPORT 5 HD",
+        "AL| EUROSPORT 1 HD","AL| EUROSPORT 2 HD","AL| Fight Box HD"
+    ]
+    sport_rank = {name.upper(): i for i, name in enumerate(sport_order)}
+    sport_keys = ["SPORT", "SUPER SPORT", "TRING", "KUJTESA", "EUROSPORT", "ART SPORT", "FIGHT"]
+
+    safe_items = []
+    for idx, it in enumerate(items):
+        name_up = it["name"].upper().strip()
+        textkey = (it["name"] + " " + it["group"]).upper()
+        sport = any(k in textkey for k in sport_keys)
+        safe_items.append({
+            "i": idx,
+            "name": it["name"],
+            "group": "Sport" if sport else it["group"],
+            "raw_group": it["group"],
+            "logo": it["logo"],
+            "url": it["url"],
+            "sport_rank": sport_rank.get(name_up, 9999),
+        })
+
+    data_json = json.dumps(safe_items, ensure_ascii=False)
+    brand = get_settings().get("brand_name", "NOX IPTV") if "get_settings" in globals() else "NOX IPTV"
+
+    body = f"""
+    <style>
+      :root{{--bg:#050816;--panel:#0b1220e6;--soft:#111827;--line:#26324a;--text:#f8fafc;--muted:#94a3b8;--blue:#0ea5e9;--violet:#8b5cf6;--green:#22c55e}}
+      body.light{{--bg:#f8fafc;--panel:#ffffffee;--soft:#f1f5f9;--line:#dbe3ef;--text:#0f172a;--muted:#64748b}}
+      body{{background:var(--bg)!important;color:var(--text)!important;font-family:Inter,Arial,sans-serif}}
+      .desktopOnly{{display:block}}.mobileOnly{{display:none}}
+      .top{{background:linear-gradient(135deg,#020617,#0f172a,#111827)!important;padding:16px!important;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;backdrop-filter:blur(14px)}}
+      .brandrow{{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1360px;margin:auto}}
+      .brand{{display:flex;align-items:center;gap:12px}}.brand img{{width:48px;height:48px;border-radius:17px;box-shadow:0 12px 35px #0008}}.brand h2{{margin:0;font-size:24px;font-weight:950}}.vtag{{font-size:11px;background:#8b5cf6;color:white;border-radius:999px;padding:4px 8px;margin-left:7px}}
+      .userpill{{font-size:12px;color:#cbd5e1;background:#0f172acc;border:1px solid #334155;border-radius:999px;padding:8px 11px}}.switch{{background:#0f172a;border:1px solid #334155;color:white;border-radius:999px;padding:8px 10px;cursor:pointer}}
+      .toolbar{{max-width:1360px;margin:13px auto 0;display:flex;gap:10px;flex-wrap:wrap}}.toolbar input,.toolbar select{{flex:1;min-width:190px;background:#0b1220;border:1px solid #31405e;border-radius:16px;padding:13px;color:white;outline:none}}
+      .layout{{display:grid;grid-template-columns:255px 1fr;gap:14px;max-width:1360px;margin:auto;padding:14px}}
+      .side,.hero,.pcbox,.rail{{background:var(--panel);border:1px solid var(--line);border-radius:26px;box-shadow:0 18px 55px #0008}}
+      .side{{padding:14px;height:fit-content;position:sticky;top:118px}}.navbtn{{width:100%;display:flex;align-items:center;gap:10px;text-align:left;margin:7px 0;background:#1e293b;border-radius:16px}}.navbtn.active{{background:linear-gradient(135deg,#0ea5e9,#2563eb)}}
+      .hero{{padding:17px;margin-bottom:14px;overflow:hidden;position:relative}}.hero h3{{margin:0 0 7px;font-size:24px;font-weight:950}}.hint{{color:var(--muted);font-size:13px;line-height:1.5}}
+      .controls{{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}}.btn{{border-radius:14px!important;padding:11px 14px!important;font-weight:850!important}}.onlyfav{{background:linear-gradient(135deg,#f59e0b,#f97316)!important;color:white!important}}
+      .pcbox{{display:none;padding:12px;margin-bottom:14px}}video{{width:100%;height:390px;background:#000;border-radius:22px;display:block}}
+      .rail{{padding:13px;margin-bottom:14px}}.railtitle{{display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px}}.railtitle h3{{margin:0;font-size:18px}}.railrow{{display:flex;gap:10px;overflow:auto;padding-bottom:4px}}
+      .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:11px}}.ch,.railcard{{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:13px;cursor:pointer;min-height:92px;transition:.14s;position:relative;overflow:hidden}}.railcard{{min-width:220px}}.ch:hover,.railcard:hover{{border-color:#38bdf8;transform:translateY(-2px)}}.selected{{border-color:#0ea5e9!important;box-shadow:0 0 0 1px #0ea5e9aa}}
+      .logo{{width:48px;height:48px;object-fit:contain;float:left;margin-right:12px;background:#ffffff12;border-radius:15px}}.name{{font-size:15px;font-weight:950;line-height:1.25}}.group{{clear:both;color:var(--muted);font-size:12px;margin-top:9px}}.live{{position:absolute;right:10px;bottom:10px;background:#16a34a;color:white;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900}}
+      .bottomnav{{display:none}}
+      @media(max-width:900px){{
+        .desktopOnly{{display:none!important}}.mobileOnly{{display:block!important}}
+        .top{{padding:12px!important}}.brand img{{width:42px;height:42px}}.brand h2{{font-size:20px}}.userpill{{display:none}}
+        .toolbar{{display:block}}.toolbar input{{width:100%;min-width:0;margin-bottom:8px}}.toolbar select{{width:100%;min-width:0}}
+        .layout{{display:block;padding:10px;padding-bottom:86px}}.side{{display:none}}
+        .hero{{border-radius:22px;padding:14px}}.hero h3{{font-size:19px}}
+        .rail{{border-radius:22px;padding:12px}}.railrow{{gap:8px}}.railcard{{min-width:178px;min-height:84px}}
+        .grid{{grid-template-columns:1fr;gap:9px}}.ch{{min-height:82px;border-radius:19px}}.logo{{width:42px;height:42px}}.name{{font-size:15px}}
+        .pcbox{{border-radius:22px}}video{{height:225px;border-radius:18px}}
+        .bottomnav{{display:flex;position:fixed;bottom:0;left:0;right:0;background:#020617ee;border-top:1px solid #26324a;z-index:50;padding:8px;gap:8px;backdrop-filter:blur(12px)}}.bottomnav button{{flex:1;padding:11px 8px!important;font-size:12px}}
+      }}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
+
+    <div class="top">
+      <div class="brandrow">
+        <div class="brand"><img src="/static/nox_logo.svg" onerror="this.style.display='none'"><div><h2>{brand}<span class="vtag">V10.1</span></h2><div class="hint">{c.get('name', slug)}</div></div></div>
+        <div style="display:flex;gap:8px;align-items:center"><button class="switch desktopOnly" onclick="toggleTheme()">🌙/☀️</button><span class="userpill">Online</span><a class="btn red" href="/watch/logout">Logout</a></div>
+      </div>
+      <div class="toolbar">
+        <input id="search" placeholder="Kërko kanal...">
+        <select id="group"><option value="">Të gjitha</option><option value="__fav">⭐ Favorites</option><option value="__recent">🕘 Recent</option><option value="Sport">Sport</option></select>
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="side">
+        <button class="btn navbtn active" onclick="setGroup('',this)">🏠 <span>Home</span></button>
+        <button class="btn navbtn" onclick="setGroup('__fav',this)">⭐ <span>Favorites</span></button>
+        <button class="btn navbtn" onclick="setGroup('__recent',this)">🕘 <span>Recent</span></button>
+        <button class="btn navbtn" onclick="setGroup('Sport',this)">🏆 <span>Sport</span></button>
+        <button class="btn navbtn" onclick="setMode('pc')">💻 <span>PC Mode</span></button>
+        <button class="btn navbtn" onclick="setMode('auto')">📱 <span>Mobile App</span></button>
+      </aside>
+
+      <main>
+        <section class="hero">
+          <h3 id="now">Zgjedh një kanal</h3>
+          <div class="hint" id="hint">Në telefon hapet direkt në app. Android përdor proxy stream për stabilitet. Për kompjuter zgjidh PC Mode.</div>
+          <div class="controls"><button class="btn onlyfav" onclick="toggleFavorite()">⭐ Favorite</button></div>
+        </section>
+
+        <section class="pcbox" id="pcbox">
+          <video id="pcvideo" controls playsinline></video>
+          <div class="hint" id="pchint">PC Browser player aktiv.</div>
+        </section>
+
+        <section class="rail" id="continueBox">
+          <div class="railtitle"><h3>Continue Watching</h3><span class="hint">Kanalet e fundit</span></div>
+          <div class="railrow" id="continueRail"></div>
+        </section>
+
+        <section class="rail">
+          <div class="railtitle"><h3>Recommended for you</h3><span class="hint">Sport & të shikuara</span></div>
+          <div class="railrow" id="recommendRail"></div>
+        </section>
+
+        <div class="grid" id="channels"></div>
+      </main>
+    </div>
+
+    <div class="bottomnav">
+      <button class="btn" onclick="setGroup('',null)">Home</button>
+      <button class="btn gray" onclick="setGroup('__fav',null)">⭐</button>
+      <button class="btn gray" onclick="setGroup('Sport',null)">Sport</button>
+      <button class="btn gray" onclick="setMode('pc')">PC</button>
+    </div>
+
+    <script>
+      const channels = {data_json};
+      let currentChannel=null, mode=localStorage.getItem("nox_mode_{slug}")||"auto", hls=null, ts=null;
+      const favKey="nox_fav_{slug}", recKey="nox_rec_{slug}", themeKey="nox_theme";
+      function favs(){{return JSON.parse(localStorage.getItem(favKey)||"[]")}} function setFavs(v){{localStorage.setItem(favKey,JSON.stringify(v))}}
+      function recents(){{return JSON.parse(localStorage.getItem(recKey)||"[]")}} function setRec(v){{localStorage.setItem(recKey,JSON.stringify(v.slice(0,50)))}}
+      function isIOS(){{return /iphone|ipad|ipod/i.test(navigator.userAgent)}} function isAndroid(){{return /android/i.test(navigator.userAgent)}}
+      if(localStorage.getItem(themeKey)==="light") document.body.classList.add("light");
+      function toggleTheme(){{document.body.classList.toggle("light");localStorage.setItem(themeKey,document.body.classList.contains("light")?"light":"dark")}}
+      function setMode(m){{mode=m;localStorage.setItem("nox_mode_{slug}",m);document.getElementById("pcbox").style.display=m==="pc"?"block":"none";document.getElementById("hint").innerText=m==="pc"?"PC Mode aktiv: kanalet hapen në browser.":"Mobile App aktiv: kanalet hapen direkt në app."; if(currentChannel&&m==="pc")playPc(currentChannel)}}
+      function appLinks(ch){{
+        const iosUrl=ch.url;
+        const androidUrl=location.origin+"/proxy/{slug}/"+ch.i;
+        const clean=androidUrl.replace(/^https?:\\/\\//,"");
+        const scheme=androidUrl.startsWith("https://")?"https":"http";
+        return {{
+          iphone:"vlc-x-callback://x-callback-url/stream?url="+encodeURIComponent(iosUrl),
+          android:"intent://"+clean+"#Intent;scheme="+scheme+";package=org.videolan.vlc;type=video/*;S.title=NoxIPTV;end",
+          direct:ch.url
+        }}
+      }}
+      function selectChannel(ch){{currentChannel=ch;let r=recents().filter(x=>x!==ch.i);r.unshift(ch.i);setRec(r);document.getElementById("now").innerText=ch.name+" — "+(ch.raw_group||ch.group);document.querySelectorAll(".ch,.railcard").forEach(x=>x.classList.remove("selected"));document.querySelectorAll(`[data-i="${{ch.i}}"]`).forEach(x=>x.classList.add("selected"));renderRails();try{{navigator.sendBeacon("/watch/log",JSON.stringify({{channel:ch.name,id:ch.i,event:"channel_click"}}));}}catch(e){{}} if(mode==="pc")return playPc(ch);const l=appLinks(ch);if(isIOS())window.location.href=l.iphone;else if(isAndroid())window.location.href=l.android;else window.location.href=l.direct}}
+      function stopPc(){{const v=document.getElementById("pcvideo");if(hls){{try{{hls.destroy()}}catch(e){{}}hls=null}}if(ts){{try{{ts.pause();ts.unload();ts.detachMediaElement();ts.destroy()}}catch(e){{}}ts=null}}try{{v.pause()}}catch(e){{}}v.removeAttribute("src");v.load()}}
+      function playPc(ch){{document.getElementById("pcbox").style.display="block";stopPc();const v=document.getElementById("pcvideo");document.getElementById("pchint").innerText="Duke hapur në PC Browser...";if(ch.url.toLowerCase().includes(".m3u8"))return playHls(ch.url);if(window.mpegts&&mpegts.getFeatureList().mseLivePlayback){{try{{ts=mpegts.createPlayer({{type:"mpegts",isLive:true,url:"/proxy/{slug}/"+ch.i,cors:false,enableStashBuffer:false,stashInitialSize:128,lazyLoad:false}});ts.on(mpegts.Events.ERROR,()=>playHls("/browser/ffmpeg/{slug}/"+ch.i+"/index.m3u8?mode=copy&t="+Date.now()));ts.attachMediaElement(v);ts.load();ts.play();v.onplaying=()=>document.getElementById("pchint").innerText="Live në PC Browser.";}}catch(e){{playHls("/browser/ffmpeg/{slug}/"+ch.i+"/index.m3u8?mode=copy&t="+Date.now())}}}}else playHls("/browser/ffmpeg/{slug}/"+ch.i+"/index.m3u8?mode=copy&t="+Date.now())}}
+      function playHls(src){{
+        const v=document.getElementById("pcvideo");
+        if(Hls.isSupported()){{
+          hls=new Hls({{lowLatencyMode:true,liveSyncDurationCount:2,maxBufferLength:10,backBufferLength:4}});
+          hls.loadSource(src);
+          hls.attachMedia(v);
+          hls.on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>document.getElementById("pchint").innerText="Nuk u hap në browser."));
+          hls.on(Hls.Events.ERROR,(ev,data)=>{{if(data.fatal)document.getElementById("pchint").innerText="Nuk u hap në browser."; }});
+        }} else {{
+          v.src=src;
+          v.play().catch(()=>document.getElementById("pchint").innerText="Nuk u hap në browser.");
+        }}
+        v.onplaying=()=>document.getElementById("pchint").innerText="Live në PC Browser.";
+      }}
+      function setGroup(g,el){{document.getElementById("group").value=g;document.querySelectorAll(".navbtn").forEach(x=>x.classList.remove("active"));if(el)el.classList.add("active");render()}}
+      function toggleFavorite(){{if(!currentChannel)return;let f=favs();if(f.includes(currentChannel.i))f=f.filter(x=>x!==currentChannel.i);else f.push(currentChannel.i);setFavs(f);render();renderRails()}}
+      function cardHtml(ch){{const f=favs();return `${{ch.logo?`<img class="logo" src="${{ch.logo}}" onerror="this.style.display='none'">`:""}}<div class="name">${{f.includes(ch.i)?"⭐ ":""}}${{ch.name}}</div><div class="group">${{ch.group}} · ${{ch.raw_group||""}}</div><span class="live">LIVE</span>`}}
+      function filtered(){{const q=document.getElementById("search").value.toLowerCase(),g=document.getElementById("group").value,f=favs(),r=recents();let list=channels.filter(ch=>{{let ok=!g||ch.group===g||ch.raw_group===g;if(g==="__fav")ok=f.includes(ch.i);if(g==="__recent")ok=r.includes(ch.i);return ok&&(!q||ch.name.toLowerCase().includes(q));}});if(g==="Sport")list=list.slice().sort((a,b)=>(a.sport_rank-b.sport_rank)||a.name.localeCompare(b.name));return list}}
+      function renderRails(){{const r=recents();const cont=document.getElementById("continueRail");cont.innerHTML="";r.slice(0,10).map(i=>channels.find(c=>c.i===i)).filter(Boolean).forEach(ch=>{{const d=document.createElement("div");d.className="railcard";d.dataset.i=ch.i;d.onclick=()=>selectChannel(ch);d.innerHTML=cardHtml(ch);cont.appendChild(d)}});const rec=document.getElementById("recommendRail");rec.innerHTML="";let base=channels.filter(ch=>ch.group==="Sport").sort((a,b)=>(a.sport_rank-b.sport_rank)||a.name.localeCompare(b.name)).slice(0,10);if(!base.length)base=channels.slice(0,10);base.forEach(ch=>{{const d=document.createElement("div");d.className="railcard";d.dataset.i=ch.i;d.onclick=()=>selectChannel(ch);d.innerHTML=cardHtml(ch);rec.appendChild(d)}})}}
+      function render(){{const box=document.getElementById("channels");box.innerHTML="";filtered().slice(0,1200).forEach(ch=>{{const d=document.createElement("div");d.className="ch";d.dataset.i=ch.i;d.onclick=()=>selectChannel(ch);d.innerHTML=cardHtml(ch);box.appendChild(d)}});renderRails()}}
+      document.getElementById("search").addEventListener("input",render);document.getElementById("group").addEventListener("change",render);setMode(mode);render();
+    </script>
+    """
     return client_page(body)
 
 
