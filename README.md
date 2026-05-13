@@ -1,17 +1,18 @@
-# NOX IPTV V8.0 Railway Native Engine
+# NOX IPTV V9.2 Portal + Clean Client + PC Mode
 
-Base:
-- Modern app with working V7.8.4/V7.9.1 VLC logic preserved.
+Main changes:
+- Public homepage on `/`
+- Big buttons: `KYQU SI KLIENT` -> `/watch`, `ADMIN` -> `/login`
+- Clean redesigned client page
+- Hidden technical buttons from client view
+- Only `⭐ Favorite` remains visible
+- Channel click opens external app automatically on mobile
+- `PC Browser` mode added for desktop viewing
+- Sport category sorted so ART SPORT 1 FHD starts first
+- Admin/client/core logic kept unchanged
 
-Changed only browser playback:
-- Fast router per channel.
-- Channel method memory.
-- Railway optimized TS proxy.
-- Fast HLS route for iPhone-compatible channels.
-- No slow multi-fallback waiting.
+Railway:
+Build: `pip install -r requirements.txt`
+Start: `gunicorn --workers 1 --threads 8 --timeout 0 app:app`
 
-VLC logic:
-- Not changed.
-
-Run:
-gunicorn --workers 1 --threads 8 --timeout 0 app:app
+`nixpacks.toml` installs ffmpeg for PC Browser/HLS fallback.
