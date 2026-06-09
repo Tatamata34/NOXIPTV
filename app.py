@@ -584,6 +584,7 @@ def protect_admin_routes_v101():
         "/proxy",
         "/api/native",
         "/c/",
+        "/turniri",
     )
     public_exact = {"/", "/login", "/logout", "/favicon.ico"}
 
@@ -622,6 +623,23 @@ def protect_admin_routes_v101():
         return redirect("/login")
 
     return None
+
+# ---------------- Public Turniri Editor Route ----------------
+# Hap editorin në: https://noxiptv.pro/turniri
+# Vendose file-in HTML këtu: NOXIPTV/turniri/index.html
+@app.route("/turniri")
+@app.route("/turniri/")
+def turniri_editor_page():
+    return send_from_directory(str(APP_DIR / "turniri"), "index.html")
+
+
+# Opsionale: nëse më vonë vendos foto/CSS/JS brenda folderit turniri
+# p.sh. NOXIPTV/turniri/assets/logo.png
+@app.route("/turniri/<path:filename>")
+def turniri_editor_files(filename):
+    return send_from_directory(str(APP_DIR / "turniri"), filename)
+
+
 
 
 
