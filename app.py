@@ -99,22 +99,23 @@ DEFAULT_GROUP_ORDER = [
     "MOVIES", "FILM", "SERIES", "SERIALE",
 ]
 
-    app = Flask(__name__)
-    app.secret_key = SECRET_KEY
-
-    @app.route("/abedin-bujupi")
-    def abedin_bujupi_redirect():
-        return redirect("/abedin-bujupi/")
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
 
 
-    @app.route("/abedin-bujupi/")
-    def abedin_bujupi_index():
-        return send_from_directory(APP_DIR / "static" / "abedin-bujupi", "index.html")
+@app.route("/abedin-bujupi")
+def abedin_bujupi_redirect():
+    return redirect("/abedin-bujupi/")
 
 
-    @app.route("/abedin-bujupi/<path:filename>")
-    def abedin_bujupi_files(filename):
-        return send_from_directory(APP_DIR / "static" / "abedin-bujupi", filename)
+@app.route("/abedin-bujupi/")
+def abedin_bujupi_index():
+    return send_from_directory(APP_DIR / "static" / "abedin-bujupi", "index.html")
+
+
+@app.route("/abedin-bujupi/<path:filename>")
+def abedin_bujupi_files(filename):
+    return send_from_directory(APP_DIR / "static" / "abedin-bujupi", filename)
 
 # ---------------- Persistent Backup / GitHub Sync ----------------
 
