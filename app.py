@@ -29,7 +29,6 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse, urljoin
 
 import requests
 from flask import send_from_directory, stream_with_context, Flask, Response, abort, redirect, render_template_string, request, session, url_for
-from werkzeug.security import generate_password_hash, check_password_hash
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", APP_DIR / "data"))
@@ -78,11 +77,7 @@ DEFAULT_SERVER_TEMPLATES = [
     {"id": "default-25", "name": "Server 26", "server": "http://egxbnjjg.smyia.com", "note": "default template", "created": "default"}
 ]
 
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
-if not ADMIN_PASSWORD:
-    ADMIN_PASSWORD = "admin123"
-    import sys
-    print("⚠️  WARNING: ADMIN_PASSWORD not set in environment! Using default (change in production)")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "NjoNoxi69")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "300"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
@@ -837,29 +832,7 @@ img, video, iframe, table { max-width:100%; }
 .admin-searchbar input,.admin-searchbar select{background:#0b1220;border:1px solid #334155;border-radius:13px;color:white;padding:11px;min-width:210px}
 .client-direct{font-size:12px;background:#0b1220;border:1px solid #334155;border-radius:12px;padding:9px;margin-top:8px;word-break:break-all;color:#cbd5e1}
 .iconbtn{display:inline-flex;align-items:center;gap:6px}
-
-/* Enhanced Mobile Responsiveness */
-@media(max-width:800px){
-  .admin-groups{grid-template-columns:1fr}
-  .admin-searchbar input,.admin-searchbar select{width:100%;min-width:0}
-  .nav{flex-direction:column;gap:12px}
-  .nav .btn{width:100%;text-align:center}
-  table{font-size:12px}
-  th, td{padding:8px;font-size:11px}
-  .wrap{padding:12px}
-  button{padding:8px 12px;font-size:14px}
-  .top h1{font-size:18px}
-  .top p{font-size:12px}
-  input,select,textarea{font-size:16px;padding:12px}
-  .card{padding:12px}
-}
-@media(max-width:480px){
-  .grid{grid-template-columns:1fr}
-  .btn{margin:5px 0;width:100%}
-  table{display:block;overflow-x:auto}
-  .top{padding:15px}
-  .top h1{font-size:16px}
-}
+@media(max-width:800px){.admin-groups{grid-template-columns:1fr}.admin-searchbar input,.admin-searchbar select{width:100%;min-width:0}}
 
 </style>
 </head>
@@ -1206,189 +1179,9 @@ def login():
 @app.route("/logout")
 def logout():
     session.pop("logged_in", None)
-    session.pop("client_slug", None)
     return redirect("/login")
 
 
-# ========== CLIENT LOGIN & HTML5 PLAYER ROUTES ==========
-
-@app.route("/watch/login", methods=["GET", "POST"])
-def client_login():
-    error = ""
-    if request.method == "POST":
-        slug = request.form.get("username", "").strip()
-        password = request.form.get("password", "").strip()
-        clients = load_clients()
-        client = clients.get(slug)
-
-        if client and client.get("allow_watch"):
-            portal_pass_hash = client.get("portal_password_hash")
-            portal_pass = client.get("portal_password")
-
-            if portal_pass_hash and check_password_hash(portal_pass_hash, password):
-                session["client_slug"] = slug
-                return redirect(f"/watch/{slug}")
-            elif portal_pass == password:
-                session["client_slug"] = slug
-                return redirect(f"/watch/{slug}")
-            error = "Kredenciale të gabuara"
-        else:
-            error = "Klienti nuk u gjet ose portal të çaktivizuar"
-
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>NOX IPTV Login</title>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); font-family: Arial;
-                    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }}
-            .login-box {{ background: white; padding: 40px; border-radius: 10px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }}
-            .login-box h2 {{ text-align: center; margin-bottom: 30px; color: #333; }}
-            .login-box p {{ text-align: center; color: #666; margin-bottom: 20px; }}
-            input {{ width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }}
-            button {{ width: 100%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 5px;
-                     font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; }}
-            button:hover {{ background: #1d4ed8; }}
-            .error {{ color: #dc2626; text-align: center; margin-top: 10px; padding: 10px; background: #fee2e2; border-radius: 5px; }}
-            .back {{ text-align: center; margin-top: 15px; }}
-            .back a {{ color: #2563eb; text-decoration: none; }}
-        </style>
-    </head>
-    <body>
-        <div class="login-box">
-            <h2>🎬 NOX IPTV</h2>
-            <p>Client Portal Login</p>
-            <form method="post">
-                <input type="text" name="username" placeholder="Username" required>
-                <input type="password" name="password" placeholder="Password" required>
-                <button type="submit">Login</button>
-            </form>
-            {f'<div class="error">{error}</div>' if error else ''}
-            <div class="back">
-                <a href="/">← Home</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-
-@app.route("/watch")
-@app.route("/watch/<slug>")
-def client_watch(slug=None):
-    if not slug:
-        slug = session.get("client_slug")
-        if not slug:
-            return redirect("/watch/login")
-
-    clients = load_clients()
-    client = clients.get(slug)
-    if not client or not client.get("allow_watch"):
-        return redirect("/watch/login")
-
-    try:
-        playlist = get_playlist_for_client(slug, force_refresh=False)
-        items = parse_m3u_items(playlist)
-    except Exception as e:
-        items = []
-
-    channels_html = ""
-    for i, item in enumerate(items[:50]):
-        logo = item.get("logo", "")
-        logo_html = f'<img src="{logo}" class="logo" onerror="this.style.display=\'none\'">' if logo else ""
-        channels_html += f"""
-        <div class="channel" onclick="playChannel('{item['url'].replace("'", "\\'")}')" data-name="{item['name']}">
-            {logo_html}
-            <div class="name">{item['name']}</div>
-            <div class="group">{item['group']}</div>
-        </div>
-        """
-
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-        <title>{client.get('name', slug)} - NOX IPTV</title>
-        <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ background: #0b1220; color: #e5e7eb; font-family: Arial, sans-serif; }}
-            .top {{ background: #111827; padding: 15px; position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; }}
-            .top h2 {{ font-size: 18px; margin: 0; }}
-            .top a {{ color: #2563eb; text-decoration: none; margin-left: 10px; }}
-            .container {{ max-width: 100%; display: flex; flex-direction: column; height: 100vh; }}
-            .player-section {{ flex: 1; background: #000; display: flex; align-items: center; justify-content: center; }}
-            video {{ width: 100%; height: 100%; }}
-            .channels-section {{ background: #111827; padding: 15px; max-height: 35vh; overflow-y: auto; }}
-            .channels {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }}
-            .channel {{ background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; cursor: pointer; transition: all 0.3s; }}
-            .channel:hover {{ border-color: #2563eb; background: #1e3a4c; }}
-            .logo {{ width: 40px; height: 40px; object-fit: contain; float: left; margin-right: 8px; background: #fff2; border-radius: 4px; }}
-            .name {{ font-size: 13px; font-weight: 600; }}
-            .group {{ font-size: 11px; color: #94a3b8; margin-top: 4px; clear: both; }}
-            @media (max-width: 768px) {{
-                .channels {{ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }}
-                .top {{ flex-direction: column; gap: 10px; }}
-                .top h2 {{ font-size: 16px; }}
-            }}
-            .loading {{ text-align: center; color: #94a3b8; padding: 20px; }}
-        </style>
-    </head>
-    <body>
-        <div class="top">
-            <h2>📺 {client.get('name', slug)}</h2>
-            <a href="/watch/logout">Logout</a>
-        </div>
-        <div class="container">
-            <div class="player-section">
-                <video id="video" controls style="width:100%;height:100%;"></video>
-            </div>
-            <div class="channels-section">
-                <div class="channels" id="channels">
-                    {channels_html if items else '<div class="loading">No channels available</div>'}
-                </div>
-            </div>
-        </div>
-        <script>
-            const video = document.getElementById('video');
-            let hls = null;
-
-            function playChannel(url) {{
-                if (Hls.isSupported()) {{
-                    if (hls) hls.destroy();
-                    hls = new Hls({{ lowLatencyMode: true }});
-                    hls.loadSource(url);
-                    hls.attachMedia(video);
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-                }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
-                    video.src = url;
-                    video.play();
-                }} else {{
-                    alert('HLS playback not supported on this device. Try VLC app instead.');
-                }}
-            }}
-
-            // Auto-play first channel
-            const firstChannel = document.querySelector('.channel');
-            if (firstChannel) {{
-                firstChannel.click();
-            }}
-        </script>
-    </body>
-    </html>
-    """
-
-
-@app.route("/watch/logout")
-def client_logout():
-    session.pop("client_slug", None)
-    return redirect("/watch/login")
 
 
 @app.route("/dashboard")
@@ -1517,7 +1310,6 @@ def add_edit(slug=None):
             "proxy_url": request.form.get("proxy_url", "").strip(),
             "portal_user": portal_user,
             "portal_password": portal_password,
-            "portal_password_hash": generate_password_hash(portal_password),
             "allow_watch": request.form.get("allow_watch") == "on",
             "client_note": request.form.get("client_note", "").strip(),
             "favorite": request.form.get("favorite") == "on",
